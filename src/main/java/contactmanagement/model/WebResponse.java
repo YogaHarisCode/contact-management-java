@@ -15,5 +15,5 @@ public class WebResponse<T> {
 
     private T Data;
 
-    private T errors;
+    private Object errors;
 }
