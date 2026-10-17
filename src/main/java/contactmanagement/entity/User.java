@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Persistable;
 
 import java.util.List;
 
@@ -14,7 +16,7 @@ import java.util.List;
 @NoArgsConstructor
 @Entity
 @Table(name = "users")
-public class User {
+public class User implements Persistable<String> {
 
     @Id
     private String username;
@@ -30,4 +32,23 @@ public class User {
 
     @OneToMany(mappedBy = "user")
     private List<Contact> contacts;
+
+    @Transient
+    private boolean newEntity = true;
+
+    @Override
+    public @Nullable String getId() {
+        return username;
+    }
+
+    @Override
+    public boolean isNew() {
+        return newEntity;
+    }
+
+    @PostLoad
+    @PostPersist
+    public void markNotNew(){
+        this.newEntity = false;
+    }
 }
