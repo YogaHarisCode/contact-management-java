@@ -5,12 +5,14 @@ import contactmanagement.model.RegisterUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -23,21 +25,28 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse register(RegisterUserRequest request) {
-        if (userRepository.existsById(request.getUsername())) {
+        String username = request.getUsername();
+        log.debug("Register user started: username={}", username);
+
+        if (userRepository.existsById(username)) {
+            log.warn("Register user rejected, username already exists: username={}", username);
             throw usernameAlreadyExists();
         }
 
         User user = new User();
-        user.setUsername(request.getUsername());
+        user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setName(request.getName());
 
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
+            log.warn("Register user rejected, duplicate detected by database constraint "
+                    + "(concurrent registration): username={}", username);
             throw usernameAlreadyExists();
         }
 
+        log.info("User registered: username={}", username);
         return toUserResponse(user);
     }
 
