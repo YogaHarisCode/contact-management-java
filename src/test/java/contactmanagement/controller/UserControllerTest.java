@@ -21,6 +21,12 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Integration tests for {@link UserController} covering the register-user feature.
+ *
+ * <p>Runs against the real datasource configured in {@code application.properties} and clears
+ * the {@code users} table before every test, so point it to a dedicated test database.
+ */
 @SpringBootTest
 @AutoConfigureRestTestClient
 class UserControllerTest {
@@ -39,6 +45,7 @@ class UserControllerTest {
         userRepository.deleteAll();
     }
 
+    /** A valid request returns 200 and stores a BCrypt hash instead of the raw password. */
     @Test
     void testRegisterSuccess() {
         RegisterUserRequest request = request("test", "test1234", "test");
@@ -55,6 +62,7 @@ class UserControllerTest {
         assertTrue(passwordEncoder.matches(request.getPassword(), saved.getPassword()));
     }
 
+    /** The raw JSON response must contain neither a password field nor the password value. */
     @Test
     void testRegisterResponseDoesNotExposePassword() {
         String rawBody = client.post()
@@ -73,6 +81,7 @@ class UserControllerTest {
         assertFalse(rawBody.contains("test1234"));
     }
 
+    /** A duplicate username returns 400 and must not overwrite the existing account. */
     @Test
     void testRegisterDuplicateUsername() {
         User existing = new User();
@@ -93,6 +102,7 @@ class UserControllerTest {
         assertEquals("original", unchanged.getName());
     }
 
+    /** Every invalid payload returns 400 with an error message and stores nothing. */
     @ParameterizedTest
     @MethodSource("invalidRequests")
     void testRegisterInvalid(RegisterUserRequest request) {
@@ -103,6 +113,7 @@ class UserControllerTest {
         assertEquals(0, userRepository.count());
     }
 
+    /** Supplies one invalid payload per constraint: blank, null, and too long/short values. */
     static Stream<RegisterUserRequest> invalidRequests() {
         String tooLong = "a".repeat(101);
         return Stream.of(
@@ -119,6 +130,7 @@ class UserControllerTest {
         );
     }
 
+    /** Shortcut for building a registration request. */
     private static RegisterUserRequest request(String username, String password, String name) {
         return RegisterUserRequest.builder()
                 .username(username)
@@ -127,6 +139,7 @@ class UserControllerTest {
                 .build();
     }
 
+    /** Posts to {@code /api/users}, asserts HTTP 200, and returns the parsed response. */
     private WebResponse<UserResponse> postRegisterOK(RegisterUserRequest request) {
         return client.post()
                 .uri("/api/users")
@@ -141,6 +154,7 @@ class UserControllerTest {
                 .getResponseBody();
     }
 
+    /** Posts to {@code /api/users}, asserts HTTP 400, and returns the parsed response. */
     private WebResponse<UserResponse> postRegisterBadRequest(RegisterUserRequest request) {
         return client.post()
                 .uri("/api/users")
