@@ -4,6 +4,7 @@ import contactmanagement.entity.User;
 import contactmanagement.model.LoginResponse;
 import contactmanagement.model.LoginUserRequest;
 import contactmanagement.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
 
@@ -34,17 +36,26 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResponse login(LoginUserRequest request) {
-        User user = userRepository.findById(request.getUsername()).orElse(null);
+        String username = request.getUsername();
+        log.debug("Login started: username={}", username);
+
+        User user = userRepository.findById(username).orElse(null);
 
         String hashToCheck = (user != null) ? user.getPassword() : dummyPasswordHash;
         boolean passwordMatches = passwordEncoder.matches(request.getPassword(), hashToCheck);
 
         if (user == null || !passwordMatches) {
+            // The reason is logged for operators only; the client always gets the same message.
+            log.warn("Login rejected, invalid credentials: username={}, reason={}",
+                    username, (user == null) ? "user_not_found" : "wrong_password");
             throw invalidCredentials();
         }
 
         user.setToken(UUID.randomUUID().toString());
         user.setTokenExpiredAt(Instant.now().plus(TOKEN_TTL).toEpochMilli());
+
+        // The token itself is deliberately never logged.
+        log.info("User logged in: username={}, tokenExpiredAt={}", username, user.getTokenExpiredAt());
 
         return LoginResponse.builder()
                 .token(user.getToken())
