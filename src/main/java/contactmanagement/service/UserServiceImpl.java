@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -34,6 +35,7 @@ public class UserServiceImpl implements UserService {
      * of the same username.
      */
     @Override
+    @Transactional
     public UserResponse register(RegisterUserRequest request) {
         String username = request.getUsername();
         log.debug("Register user started: username={}", username);
