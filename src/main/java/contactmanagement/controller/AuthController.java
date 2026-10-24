@@ -11,12 +11,24 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * REST controller exposing authentication endpoints under {@code /api/auth}.
+ *
+ * <p>The controller only handles HTTP concerns (mapping, validation trigger, response envelope);
+ * all business rules live in {@link AuthService}.
+ */
 @RestController
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
 
+    /**
+     * Authenticates a user. This endpoint is public and requires no token.
+     *
+     * @param request the login credentials; validated before the method is invoked
+     * @return a {@link WebResponse} with HTTP 200 containing the token and its expiration time
+     */
     @PostMapping(
             path = "/api/auth/login",
             produces = MediaType.APPLICATION_JSON_VALUE,
