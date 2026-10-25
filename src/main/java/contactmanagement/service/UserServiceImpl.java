@@ -68,10 +68,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse get(User user) {
-        return UserResponse.builder()
-                .username(user.getUsername())
-                .name(user.getName())
-                .build();
+        return toUserResponse(user);
     }
 
     /**
