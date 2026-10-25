@@ -66,6 +66,12 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(user);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The user was already loaded and validated while resolving the token, so no database
+     * access is needed here.
+     */
     @Override
     public UserResponse get(User user) {
         log.debug("Get current user: username={}", user.getUsername());
