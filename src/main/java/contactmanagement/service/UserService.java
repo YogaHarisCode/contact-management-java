@@ -21,5 +21,11 @@ public interface UserService {
      */
     UserResponse register(RegisterUserRequest request);
 
+    /**
+     * Returns the public profile of an already authenticated user.
+     *
+     * @param user the authenticated user, resolved from the {@code X-API-TOKEN} header
+     * @return the user's username and name, without the password hash or token
+     */
     UserResponse get(User user);
 }
