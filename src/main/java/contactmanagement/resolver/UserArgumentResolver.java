@@ -14,16 +14,18 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.Objects;
 
 @Component
 @RequiredArgsConstructor
 public class UserArgumentResolver implements HandlerMethodArgumentResolver {
 
-    private static final String UNAUTHORIZED = "Unauthorized";
-
     private final UserRepository userRepository;
 
+    private ResponseStatusException unauthorized(){
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+    }
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.getParameterType().equals(User.class);
@@ -35,9 +37,16 @@ public class UserArgumentResolver implements HandlerMethodArgumentResolver {
         String header = request.getHeader("X-API-TOKEN");
 
         if (Objects.isNull(header)){
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, UNAUTHORIZED);
+            throw unauthorized();
         }
 
-        if ()
+        User user = userRepository.findFirstByToken(header)
+                .orElseThrow(this::unauthorized);
+
+        if (user.getTokenExpiredAt() < Instant.now().toEpochMilli()){
+            throw unauthorized();
+        }
+
+        return user;
     }
 }
