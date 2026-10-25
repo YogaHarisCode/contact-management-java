@@ -24,6 +24,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Web-layer tests for {@code GET /api/users/current}.
+ *
+ * <p>Runs the real {@link UserController}, argument resolver, and exception handler, with
+ * {@link UserService} and {@link UserRepository} mocked, so no database is needed.
+ */
 @WebMvcTest(UserController.class)
 @AutoConfigureRestTestClient
 class UserControllerGetUserWebMvcTest {
