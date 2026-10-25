@@ -22,7 +22,8 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for {@link UserController} covering the register-user feature.
+ * Integration tests for {@link UserController} covering the register-user and
+ * get-current-user features.
  *
  * <p>Runs against the real datasource configured in {@code application.properties} and clears
  * the {@code users} table before every test, so point it to a dedicated test database.
