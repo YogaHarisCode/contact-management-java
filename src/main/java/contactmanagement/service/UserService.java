@@ -1,5 +1,6 @@
 package contactmanagement.service;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
 import contactmanagement.model.UserResponse;
 
@@ -19,4 +20,6 @@ public interface UserService {
      *         username is already registered
      */
     UserResponse register(RegisterUserRequest request);
+
+    UserResponse get(User user);
 }

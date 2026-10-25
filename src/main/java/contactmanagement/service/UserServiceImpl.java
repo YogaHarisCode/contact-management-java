@@ -66,6 +66,14 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(user);
     }
 
+    @Override
+    public UserResponse get(User user) {
+        return UserResponse.builder()
+                .username(user.getUsername())
+                .name(user.getName())
+                .build();
+    }
+
     /**
      * Builds the exception used when a username is already taken.
      *
