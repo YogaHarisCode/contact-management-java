@@ -27,6 +27,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for {@link UserArgumentResolver}: parameter support, token validation, and the
+ * 401 cases (missing or blank header, unknown token, expired token).
+ *
+ * <p>Uses a mocked {@link UserRepository} and real Spring web request objects.
+ */
 @ExtendWith(MockitoExtension.class)
 class UserArgumentResolverTest {
 
