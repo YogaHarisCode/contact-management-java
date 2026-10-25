@@ -14,6 +14,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+/**
+ * Unit tests for {@link UserServiceImpl} (get-current-user), with the repository and password
+ * encoder mocked.
+ */
 @ExtendWith(MockitoExtension.class)
 class UserServiceImplTest {
 
