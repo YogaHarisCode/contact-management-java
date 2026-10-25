@@ -46,7 +46,7 @@ public class User implements Persistable<String> {
     private String name;
 
     /** Authentication token issued at login. Reserved for the login feature; {@code null} until then. */
-    @Column(name = "token", length = 100)
+    @Column(name = "token", length = 100, unique = true)
     private String token;
 
     /**
