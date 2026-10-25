@@ -22,7 +22,8 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for {@link UserController} covering the register-user feature.
+ * Integration tests for {@link UserController} covering the register-user and
+ * get-current-user features.
  *
  * <p>Runs against the real datasource configured in {@code application.properties} and clears
  * the {@code users} table before every test, so point it to a dedicated test database.
@@ -30,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @AutoConfigureRestTestClient
 class UserControllerTest {
+
+    private static final String CURRENT_USER_URI = "/api/users/current";
+    private static final String TOKEN_HEADER = "X-API-TOKEN";
+    private static final String VALID_TOKEN = "valid-token-user-a";
+    private static final String OTHER_TOKEN = "valid-token-user-b";
 
     @Autowired
     private RestTestClient client;
@@ -167,5 +173,124 @@ class UserControllerTest {
                 })
                 .returnResult()
                 .getResponseBody();
+    }
+
+    @Test
+    void shouldReturnCurrentUserProfileWhenTokenIsValid() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+
+        WebResponse<UserResponse> response = getCurrentUser(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals("usera", response.getData().getUsername());
+        assertEquals("User A", response.getData().getName());
+    }
+
+    @Test
+    void shouldReturnOwnProfileWhenMultipleUsersHaveTokens() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+        saveUser("userb", "User B", OTHER_TOKEN, futureExpiry());
+
+        WebResponse<UserResponse> response = getCurrentUser(OTHER_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("userb", response.getData().getUsername());
+        assertEquals("User B", response.getData().getName());
+    }
+
+    @Test
+    void shouldNotExposePasswordOrTokenWhenTokenIsValid() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+
+        String rawBody = getCurrentUser(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertFalse(rawBody.contains("password"));
+        assertFalse(rawBody.contains("bcrypt-hash"));
+        assertFalse(rawBody.contains("token"));
+        assertFalse(rawBody.contains(VALID_TOKEN));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenTokenHeaderIsMissing() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+
+        assertUnauthorized(getCurrentUser(null));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenTokenHeaderIsEmpty() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+
+        assertUnauthorized(getCurrentUser(""));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenTokenIsNotFound() {
+        saveUser("usera", "User A", VALID_TOKEN, futureExpiry());
+
+        assertUnauthorized(getCurrentUser("unknown-token"));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenTokenIsExpired() {
+        saveUser("usera", "User A", VALID_TOKEN, System.currentTimeMillis() - 1_000L);
+
+        assertUnauthorized(getCurrentUser(VALID_TOKEN));
+    }
+
+    /** Sends GET /api/users/current; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec getCurrentUser(String token) {
+        return client.get()
+                .uri(CURRENT_USER_URI)
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .exchange();
+    }
+
+    private void assertUnauthorized(RestTestClient.ResponseSpec spec) {
+        WebResponse<UserResponse> response = spec
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Unauthorized", response.getErrors());
+    }
+
+    private void saveUser(String username, String name, String token, long expiredAt) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("bcrypt-hash");
+        user.setName(name);
+        user.setToken(token);
+        user.setTokenExpiredAt(expiredAt);
+        userRepository.save(user);
+    }
+
+    private static long futureExpiry() {
+        return System.currentTimeMillis() + 60_000L;
     }
 }

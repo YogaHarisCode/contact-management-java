@@ -45,13 +45,13 @@ public class User implements Persistable<String> {
     @Column(name = "name", length = 100, nullable = false)
     private String name;
 
-    /** Authentication token issued at login. Reserved for the login feature; {@code null} until then. */
+    /** Authentication token issued at login and checked on every authenticated request; {@code null} until the first login. */
     @Column(name = "token", length = 100, unique = true)
     private String token;
 
     /**
-     * Expiration time of {@link #token} as a numeric timestamp, or {@code null} when no token is
-     * issued. The unit is defined by the login feature, which is not implemented yet.
+     * Expiration time of {@link #token} as epoch milliseconds (UTC), or {@code null} when no
+     * token has been issued.
      */
     @Column(name = "token_expired_at")
     private Long tokenExpiredAt;

@@ -1,5 +1,6 @@
 package contactmanagement.service;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
 import contactmanagement.model.UserResponse;
 
@@ -19,4 +20,12 @@ public interface UserService {
      *         username is already registered
      */
     UserResponse register(RegisterUserRequest request);
+
+    /**
+     * Returns the public profile of an already authenticated user.
+     *
+     * @param user the authenticated user, resolved from the {@code X-API-TOKEN} header
+     * @return the user's username and name, without the password hash or token
+     */
+    UserResponse get(User user);
 }

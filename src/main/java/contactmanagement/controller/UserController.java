@@ -1,5 +1,6 @@
 package contactmanagement.controller;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.model.WebResponse;
@@ -7,6 +8,7 @@ import contactmanagement.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,5 +39,25 @@ public class UserController {
     public WebResponse<UserResponse> register(@Valid @RequestBody RegisterUserRequest request){
         UserResponse response = userService.register(request);
         return WebResponse.<UserResponse>builder().data(response).build();
+    }
+
+    /**
+     * Returns the profile of the currently authenticated user.
+     *
+     * <p>Requires the {@code X-API-TOKEN} header; authentication is performed by
+     * {@link contactmanagement.resolver.UserArgumentResolver} before this method is invoked.
+     *
+     * @param user the authenticated user, injected by the argument resolver (not read from the
+     *             request body)
+     * @return a {@link WebResponse} with HTTP 200 containing the user's username and name
+     */
+    @GetMapping(
+            path = "/api/users/current",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<UserResponse> get(User user){
+        // The User parameter is supplied by UserArgumentResolver, which also enforces authentication.
+        UserResponse userResponse = userService.get(user);
+        return WebResponse.<UserResponse>builder().data(userResponse).build();
     }
 }

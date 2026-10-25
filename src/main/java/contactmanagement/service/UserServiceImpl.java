@@ -67,6 +67,18 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>The user was already loaded and validated while resolving the token, so no database
+     * access is needed here.
+     */
+    @Override
+    public UserResponse get(User user) {
+        log.debug("Get current user: username={}", user.getUsername());
+        return toUserResponse(user);
+    }
+
+    /**
      * Builds the exception used when a username is already taken.
      *
      * @return a 400 exception carrying the standard error message

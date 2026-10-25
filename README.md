@@ -1,40 +1,40 @@
 # Contact Management API
 
-A RESTful API for managing users, contacts, and addresses, built with Spring Boot. It follows
-a layered architecture (controller, service, repository) with a single response envelope for
-every endpoint and centralized error handling.
+A RESTful API for managing users, contacts, and addresses, built with Spring Boot. It follows a
+layered architecture (controller, service, repository) with a single response envelope for every
+endpoint and centralized error handling.
 
-## Feature Status
+## Features
 
-| Module  | Feature                                | Status  |
-|---------|----------------------------------------|---------|
-| User    | Register user                          | Done    |
-| User    | Login                                  | Done    |
-| User    | Current profile, update, logout        | Planned |
-| Contact | CRUD and search                        | Planned |
-| Address | CRUD                                   | Planned |
+| Module  | Feature                          | Status      |
+|---------|----------------------------------|-------------|
+| User    | Register user                    | Done        |
+| User    | Login (token authentication)     | Done        |
+| User    | Get current user profile         | Done        |
+| User    | Update profile, logout           | Planned     |
+| Contact | Create, update, get, search, delete | Planned  |
+| Address | Create, update, get, list, delete   | Planned  |
 
 ## Tech Stack
 
-| Area        | Choice                                                          |
-|-------------|-----------------------------------------------------------------|
-| Language    | Java 25                                                         |
-| Framework   | Spring Boot 4.1.1 (Spring Web MVC)                              |
-| Persistence | Spring Data JPA (Hibernate), HikariCP, MySQL                    |
-| Validation  | Jakarta Bean Validation                                         |
-| Security    | `spring-security-crypto` only (BCrypt hashing, no filter chain) |
-| Utilities   | Lombok, SLF4J                                                   |
-| Testing     | JUnit 5, Mockito, Spring Boot Test, `RestTestClient`            |
-| Build       | Maven                                                           |
+| Area        | Choice                                                         |
+|-------------|----------------------------------------------------------------|
+| Language    | Java 25                                                        |
+| Framework   | Spring Boot 4.1.1 (Spring Web MVC)                             |
+| Persistence | Spring Data JPA (Hibernate), HikariCP, MySQL                   |
+| Validation  | Jakarta Bean Validation                                        |
+| Security    | `spring-security-crypto` (BCrypt hashing, no filter chain)     |
+| Utilities   | Lombok, SLF4J                                                  |
+| Testing     | JUnit 5, Mockito, Spring Boot Test (`RestTestClient`)          |
+| Build       | Maven                                                          |
 
 ## Prerequisites
 
 - JDK 25
-- Maven 3.9+ (or the Maven wrapper, if the repository includes one)
-- MySQL 8+ running locally or reachable over the network
-- Git
+- Apache Maven
+- MySQL (8.x recommended), running locally or reachable from your machine
 
-Docker is not used by this project.
+Docker is not required, and the repository does not include a Docker setup.
 
 ## Getting Started
 
@@ -47,7 +47,8 @@ cd contact-management-java
 
 ### 2. Create the database
 
-The schema is created manually; Hibernate does not manage it.
+Hibernate does not manage the schema (`spring.jpa.hibernate.ddl-auto` is not set), so create it
+manually:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS contact_management CHARACTER SET utf8mb4;
@@ -57,27 +58,40 @@ CREATE TABLE users (
     username         VARCHAR(100) NOT NULL,
     password         VARCHAR(100) NOT NULL,
     name             VARCHAR(100) NOT NULL,
-    token            VARCHAR(100) NULL,
-    token_expired_at BIGINT       NULL,
+    token            VARCHAR(100),
+    token_expired_at BIGINT,
     PRIMARY KEY (username),
-    constraint unique_token unique (token)
+    CONSTRAINT unique_token UNIQUE (token)
 ) ENGINE = InnoDB;
 ```
 
 ### 3. Configure the application
 
-Settings live in `src/main/resources/application.properties` and can be overridden with
-environment variables:
+Configuration is read from environment variables, with local-development defaults defined in
+`src/main/resources/application.properties`:
 
-| Variable            | Default                                          | Purpose                               |
-|---------------------|--------------------------------------------------|---------------------------------------|
-| `DATABASE_URL`      | `jdbc:mysql://localhost:3306/contact_management` | JDBC connection URL                   |
-| `DATABASE_USERNAME` | `root`                                           | Database user                         |
-| `DATABASE_PASSWORD` | `1234`                                           | Database password                     |
+| Variable            | Default                                          | Description              |
+|---------------------|--------------------------------------------------|--------------------------|
+| `DATABASE_URL`      | `jdbc:mysql://localhost:3306/contact_management` | JDBC URL                 |
+| `DATABASE_USERNAME` | `root`                                           | Database user            |
+| `DATABASE_PASSWORD` | `1234`                                           | Database password        |
 | `LOG_LEVEL`         | `INFO`                                           | Log level of the `contactmanagement` package |
 
-The defaults are for local development only. Always set your own credentials and never
-deploy with the default password.
+Set your own credentials before running (the defaults are for local development only).
+
+Linux/macOS:
+
+```bash
+export DATABASE_USERNAME=myuser
+export DATABASE_PASSWORD=mypassword
+```
+
+Windows PowerShell:
+
+```powershell
+$env:DATABASE_USERNAME = "myuser"
+$env:DATABASE_PASSWORD = "mypassword"
+```
 
 ### 4. Run the application
 
@@ -85,34 +99,46 @@ deploy with the default password.
 mvn spring-boot:run
 ```
 
-The API is available at `http://localhost:8080`.
+The API is served at `http://localhost:8080`.
 
-### 5. Run the tests
+### 5. Try it
 
 ```bash
-mvn test
+# Register
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -d '{"username":"johndoe","password":"secretpassword","name":"John Doe"}'
+
+# Login (copy the token from the response)
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -d '{"username":"johndoe","password":"secretpassword"}'
+
+# Get the current user
+curl http://localhost:8080/api/users/current \
+  -H "Accept: application/json" -H "X-API-TOKEN: <token>"
 ```
 
-`UserControllerTest` and `AuthControllerTest` run against the datasource configured in
-`application.properties` and call `deleteAll()` on the `users` table. Point them to a
-dedicated test database, never to data you want to keep.
+## API Documentation
 
-## API Overview
+### Conventions
 
-All responses use the same envelope. Fields that are `null` are omitted.
+Every response uses the same envelope. A successful response carries `data`, a failed one carries
+`errors` (a string). Fields that are `null` are omitted.
 
 ```json
-{ "data": { }, "errors": "message" }
+{ "data": { } }
 ```
 
-A successful response contains `data`; a failed response contains `errors` (a string).
+```json
+{ "errors": "message" }
+```
+
+Protected endpoints require the `X-API-TOKEN` header with the token returned by login.
 
 ### Register User
 
-Creates a new account. Public endpoint.
-
-- **URL:** `POST /api/users`
-- **Headers:** `Content-Type: application/json`, `Accept: application/json`
+`POST /api/users` (public)
 
 Request body:
 
@@ -132,21 +158,18 @@ Request body:
 
 Responses:
 
-| Status | Condition                      | Body                                                |
-|--------|--------------------------------|-----------------------------------------------------|
-| 200    | User created                   | `{"data":{"username":"johndoe","name":"John Doe"}}` |
-| 400    | Validation failed              | `{"errors":"password size must be between 8 and 100"}` |
-| 400    | Username already registered    | `{"errors":"Username already exists"}`              |
-| 400    | Missing or malformed JSON body | `{"errors":"Malformed or missing request body"}`    |
+| Status | Condition                      | Body                                                                  |
+|--------|--------------------------------|-----------------------------------------------------------------------|
+| 200    | User created                   | `{"data":{"username":"johndoe","name":"John Doe"}}`                   |
+| 400    | Validation failed              | `{"errors":"password size must be between 8 and 100; username must not be blank"}` |
+| 400    | Username already registered    | `{"errors":"Username already exists"}`                                |
+| 400    | Missing or malformed JSON body | `{"errors":"Malformed or missing request body"}`                      |
 
-The password is hashed with BCrypt before storage and is never returned.
+The password is hashed with BCrypt before it is stored and is never returned.
 
 ### Login User
 
-Authenticates a user and issues a token. Public endpoint.
-
-- **URL:** `POST /api/auth/login`
-- **Headers:** `Content-Type: application/json`, `Accept: application/json`
+`POST /api/auth/login` (public)
 
 Request body:
 
@@ -155,49 +178,57 @@ Request body:
 | `username` | string | Required, max 100 chars |
 | `password` | string | Required, max 100 chars |
 
-```json
-{
-  "username": "johndoe",
-  "password": "secretpassword"
-}
-```
+Responses:
+
+| Status | Condition                          | Body                                                                                       |
+|--------|------------------------------------|--------------------------------------------------------------------------------------------|
+| 200    | Credentials valid                  | `{"data":{"token":"3c829e12-4217-48f5-a169-715a31bc0d6d","tokenExpiredAt":1900000000000}}` |
+| 400    | Validation failed                  | `{"errors":"password must not be blank"}`                                                  |
+| 400    | Missing or malformed JSON body     | `{"errors":"Malformed or missing request body"}`                                           |
+| 401    | Unknown username or wrong password | `{"errors":"Username or password wrong"}`                                                  |
+
+The token is a random UUID. `tokenExpiredAt` is epoch milliseconds (UTC) and the token is valid
+for 30 days. A new login replaces the previous token.
+
+### Get Current User
+
+`GET /api/users/current` (requires `X-API-TOKEN`)
+
+Headers:
+
+| Header        | Description                         |
+|---------------|-------------------------------------|
+| `X-API-TOKEN` | Token returned by the login endpoint |
 
 Responses:
 
-| Status | Condition                         | Body                                                                   |
-|--------|-----------------------------------|------------------------------------------------------------------------|
-| 200    | Credentials valid                 | `{"data":{"token":"3c829e12-...","tokenExpiredAt":1900000000000}}`     |
-| 400    | Validation failed                 | `{"errors":"password must not be blank"}`                              |
-| 400    | Missing or malformed JSON body    | `{"errors":"Malformed or missing request body"}`                       |
-| 401    | Unknown username or wrong password| `{"errors":"Username or password wrong"}`                              |
+| Status | Condition                                                          | Body                                                |
+|--------|--------------------------------------------------------------------|-----------------------------------------------------|
+| 200    | Token valid                                                        | `{"data":{"username":"johndoe","name":"John Doe"}}` |
+| 401    | Header missing or blank, token unknown, or token expired           | `{"errors":"Unauthorized"}`                         |
 
-Notes:
+## Testing
 
-- `tokenExpiredAt` is epoch milliseconds (UTC); a token is valid for 30 days.
-- A new login replaces the previous token, so each user has one active token at a time.
-- Unknown username and wrong password return the same message on purpose, so the API does
-  not reveal which usernames exist.
+```bash
+mvn test
+```
 
-### Planned Endpoints
+| Test class                       | Type                                       | Needs MySQL |
+|----------------------------------|--------------------------------------------|-------------|
+| `UserControllerTest`             | `@SpringBootTest` integration (register, get current user) | Yes |
+| `AuthControllerTest`             | `@SpringBootTest` integration (login)      | Yes         |
+| `AuthControllerWebMvcTest`       | `@WebMvcTest`, `AuthService` mocked        | No          |
+| `UserControllerGetUserWebMvcTest`| `@WebMvcTest`, service and repository mocked | No        |
+| `AuthServiceImplTest`            | Mockito unit test                          | No          |
+| `UserServiceImplTest`            | Mockito unit test                          | No          |
+| `UserArgumentResolverTest`       | Mockito unit test                          | No          |
 
-| Method   | URL                                         | Description                |
-|----------|---------------------------------------------|----------------------------|
-| `GET`    | `/api/users/current`                        | Get current user profile   |
-| `PATCH`  | `/api/users/current`                        | Update name and/or password|
-| `DELETE` | `/api/auth/logout`                          | Invalidate current token   |
-| `POST`   | `/api/contacts`                             | Create contact             |
-| `GET`    | `/api/contacts`                             | Search contacts (paged)    |
-| `GET`    | `/api/contacts/{contactId}`                 | Get contact                |
-| `PUT`    | `/api/contacts/{contactId}`                 | Update contact             |
-| `DELETE` | `/api/contacts/{contactId}`                 | Remove contact             |
-| `POST`   | `/api/contacts/{contactId}/addresses`       | Create address             |
-| `GET`    | `/api/contacts/{contactId}/addresses`       | List addresses             |
-| `GET`    | `/api/contacts/{contactId}/addresses/{id}`  | Get address                |
-| `PUT`    | `/api/contacts/{contactId}/addresses/{id}`  | Update address             |
-| `DELETE` | `/api/contacts/{contactId}/addresses/{id}`  | Remove address             |
+The integration tests use the datasource from `application.properties` and delete all rows in
+`users`. Point them to a dedicated test database. To run only the tests that need no database:
 
-The planned endpoints are specified in the `*_api_specification.md` files and are not
-implemented yet.
+```bash
+mvn test -Dtest='AuthControllerWebMvcTest,UserControllerGetUserWebMvcTest,AuthServiceImplTest,UserServiceImplTest,UserArgumentResolverTest'
+```
 
 ## Project Structure
 
@@ -207,8 +238,10 @@ contact-management-java
 └── src
     ├── main
     │   ├── java/contactmanagement
+    │   │   ├── ContactManagementJavaApplication.java
     │   │   ├── config
-    │   │   │   └── PasswordEncoderConfig.java
+    │   │   │   ├── PasswordEncoderConfig.java
+    │   │   │   └── WebConfiguration.java
     │   │   ├── controller
     │   │   │   ├── AuthController.java
     │   │   │   └── UserController.java
@@ -224,6 +257,8 @@ contact-management-java
     │   │   │   └── WebResponse.java
     │   │   ├── repository
     │   │   │   └── UserRepository.java
+    │   │   ├── resolver
+    │   │   │   └── UserArgumentResolver.java
     │   │   └── service
     │   │       ├── AuthService.java
     │   │       ├── AuthServiceImpl.java
@@ -235,24 +270,34 @@ contact-management-java
         ├── controller
         │   ├── AuthControllerTest.java
         │   ├── AuthControllerWebMvcTest.java
+        │   ├── UserControllerGetUserWebMvcTest.java
         │   └── UserControllerTest.java
+        ├── resolver
+        │   └── UserArgumentResolverTest.java
         └── service
-            └── AuthServiceImplTest.java
+            ├── AuthServiceImplTest.java
+            └── UserServiceImplTest.java
 ```
 
-The `@SpringBootApplication` entry-point class sits in the `contactmanagement` package.
+## Architecture and Conventions
 
-## Architecture
+- **Layers:** `controller` handles HTTP only, `service` holds business rules, `repository` is
+  Spring Data, `model` holds request/response DTOs and the envelope, `entity` holds JPA
+  entities, `resolver` authenticates requests, `exception` holds the global handler, and
+  `config` holds beans and MVC configuration.
+- **Authentication:** `UserArgumentResolver` reads the `X-API-TOKEN` header and injects the
+  current `User` into controller methods that declare a `User` parameter.
+- **Errors:** services and the resolver throw `ResponseStatusException`;
+  `GlobalExceptionHandler` converts every error into the standard envelope.
+- **Validation:** `@Valid @RequestBody` on controllers, Bean Validation annotations on DTOs.
+- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never
+  logged.
 
-- **controller:** HTTP concerns only (mapping, validation trigger, response envelope).
-- **service:** business rules; an interface plus one implementation per service.
-- **repository:** Spring Data JPA repositories.
-- **entity:** JPA entities; they never leave the service layer.
-- **model:** request and response DTOs and the `WebResponse` envelope.
-- **exception:** `GlobalExceptionHandler` converts every error into the `WebResponse` format.
-- **config:** Spring beans, such as the BCrypt `PasswordEncoder`.
+## Current Limitations
 
-## Logging
-
-SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never logged. Set
-`LOG_LEVEL=DEBUG` to see method-entry logs.
+- The schema is created manually; there is no migration tool yet.
+- No rate limiting or brute-force protection on registration and login.
+- Tokens are stored in plain text in `users.token`.
+- `application.properties` contains local-development fallbacks for the database credentials;
+  remove them before any real deployment.
+- Contact and address endpoints, profile update, and logout are specified but not implemented yet.
