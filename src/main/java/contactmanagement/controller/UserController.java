@@ -64,7 +64,7 @@ public class UserController {
             produces = MediaType.APPLICATION_JSON_VALUE,
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
-    public  WebResponse<UserResponse> update (User user,@Valid @RequestBody UpdateUserRequest request){
+    public WebResponse<UserResponse> update (User user,@Valid @RequestBody UpdateUserRequest request){
         UserResponse response = userService.update(user, request);
         return WebResponse.<UserResponse>builder().data(response).build();
     }

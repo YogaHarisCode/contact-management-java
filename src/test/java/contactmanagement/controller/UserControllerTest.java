@@ -295,17 +295,27 @@ class UserControllerTest {
         return System.currentTimeMillis() + 60_000L;
     }
 
+    /** Sends PATCH /api/users/current; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec patchCurrentUser(String token, UpdateUserRequest body) {
+        return client.patch()
+                .uri(CURRENT_USER_URI)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .body(body)
+                .exchange();
+    }
+
     @Test
     void testUpdateUserUnauthorized() {
         UpdateUserRequest request = new UpdateUserRequest();
         request.setName("test");
 
-        WebResponse<Void> response = client.patch()
-                .uri(CURRENT_USER_URI)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<Void> response = patchCurrentUser(null, request)
                 .expectStatus().isUnauthorized()
                 .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
@@ -323,13 +333,7 @@ class UserControllerTest {
         UpdateUserRequest request = new UpdateUserRequest();
         request.setName("test update");
 
-        WebResponse<Void> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", VALID_TOKEN)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<Void> response = patchCurrentUser(VALID_TOKEN, request)
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
@@ -349,13 +353,7 @@ class UserControllerTest {
         UpdateUserRequest request = new UpdateUserRequest();
         request.setPassword("test update");
 
-        WebResponse<Void> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", VALID_TOKEN)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<Void> response = patchCurrentUser(VALID_TOKEN, request)
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
@@ -375,13 +373,7 @@ class UserControllerTest {
         UpdateUserRequest request = new UpdateUserRequest();
         request.setPassword("update");
 
-        WebResponse<Void> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", VALID_TOKEN)
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<Void> response = patchCurrentUser(VALID_TOKEN, request)
                 .expectStatus().isBadRequest()
                 .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
