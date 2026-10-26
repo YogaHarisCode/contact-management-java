@@ -2,16 +2,14 @@ package contactmanagement.controller;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
+import contactmanagement.model.UpdateUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.model.WebResponse;
 import contactmanagement.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller exposing user management endpoints under {@code /api/users}.
@@ -59,5 +57,28 @@ public class UserController {
         // The User parameter is supplied by UserArgumentResolver, which also enforces authentication.
         UserResponse userResponse = userService.get(user);
         return WebResponse.<UserResponse>builder().data(userResponse).build();
+    }
+
+    /**
+     * Updates the name and/or password of the currently authenticated user.
+     *
+     * <p>Requires the {@code X-API-TOKEN} header; authentication is performed by
+     * {@link contactmanagement.resolver.UserArgumentResolver} before the body is validated, so
+     * a missing or invalid token always results in 401, even when the body is also invalid.
+     *
+     * @param user    the authenticated user, injected by the argument resolver (not read from
+     *                the request body)
+     * @param request the fields to change; every field is optional and validated before the
+     *                method is invoked
+     * @return a {@link WebResponse} with HTTP 200 containing the updated username and name
+     */
+    @PatchMapping(
+            path = "/api/users/current",
+            produces = MediaType.APPLICATION_JSON_VALUE,
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<UserResponse> update (User user,@Valid @RequestBody UpdateUserRequest request){
+        UserResponse response = userService.update(user, request);
+        return WebResponse.<UserResponse>builder().data(response).build();
     }
 }

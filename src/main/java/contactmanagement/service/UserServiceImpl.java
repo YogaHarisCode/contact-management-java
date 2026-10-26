@@ -2,6 +2,7 @@ package contactmanagement.service;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
+import contactmanagement.model.UpdateUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Objects;
 
 /**
  * Default {@link UserService} implementation backed by Spring Data JPA.
@@ -75,6 +78,41 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse get(User user) {
         log.debug("Get current user: username={}", user.getUsername());
+        return toUserResponse(user);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The change is applied to the user that was loaded while resolving the token, so no
+     * extra lookup is needed. Only which fields are present is logged, never their values.
+     */
+    @Override
+    @Transactional
+    public UserResponse update(User user, UpdateUserRequest request) {
+        String username = user.getUsername();
+        boolean nameProvided = Objects.nonNull(request.getName());
+        boolean passwordProvided = Objects.nonNull(request.getPassword());
+
+        // Only which fields are present is logged, never their values (the password must not leak).
+        log.debug("Update user started: username={}, nameProvided={}, passwordProvided={}",
+                username, nameProvided, passwordProvided);
+
+        // PATCH semantics: a null field means "keep the current value".
+        if (nameProvided){
+            user.setName(request.getName());
+        }
+
+        if (passwordProvided){
+            // Never store the raw password: only the BCrypt hash is persisted.
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        // The loaded user is not "new" (see User#isNew), so save() merges instead of inserting.
+        userRepository.save(user);
+
+        log.info("User updated: username={}, nameUpdated={}, passwordUpdated={}",
+                username, nameProvided, passwordProvided);
         return toUserResponse(user);
     }
 
