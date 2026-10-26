@@ -84,16 +84,26 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserResponse update(User user, UpdateUserRequest request) {
-        if (Objects.nonNull(request.getName())){
+        String username = user.getUsername();
+        boolean nameProvided = Objects.nonNull(request.getName());
+        boolean passwordProvided = Objects.nonNull(request.getPassword());
+
+        // Only which fields are present is logged, never their values (the password must not leak).
+        log.debug("Update user started: username={}, nameProvided={}, passwordProvided={}",
+                username, nameProvided, passwordProvided);
+
+        if (nameProvided){
             user.setName(request.getName());
         }
 
-        if (Objects.nonNull(request.getPassword())){
+        if (passwordProvided){
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
 
         userRepository.save(user);
 
+        log.info("User updated: username={}, nameUpdated={}, passwordUpdated={}",
+                username, nameProvided, passwordProvided);
         return toUserResponse(user);
     }
 
