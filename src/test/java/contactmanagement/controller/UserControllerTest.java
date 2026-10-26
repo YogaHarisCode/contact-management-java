@@ -2,6 +2,7 @@ package contactmanagement.controller;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
+import contactmanagement.model.UpdateUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.model.WebResponse;
 import contactmanagement.repository.UserRepository;
@@ -292,5 +293,102 @@ class UserControllerTest {
 
     private static long futureExpiry() {
         return System.currentTimeMillis() + 60_000L;
+    }
+
+    @Test
+    void testUpdateUserUnauthorized() {
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setName("test");
+
+        WebResponse<Void> response = client.patch()
+                .uri(CURRENT_USER_URI)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+    }
+
+    @Test
+    void testUpdateUserNameOnlySuccess() {
+        saveUser("test", "test", VALID_TOKEN, futureExpiry());
+
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setName("test update");
+
+        WebResponse<Void> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        User user = userRepository.findById("test").orElseThrow();
+
+        assertEquals(request.getName(), user.getName());
+    }
+
+    @Test
+    void testUpdateUserPasswordOnlySuccess() {
+        saveUser("test", "test", VALID_TOKEN, futureExpiry());
+
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setPassword("test update");
+
+        WebResponse<Void> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        User user = userRepository.findById("test").orElseThrow();
+
+        assertTrue(passwordEncoder.matches(request.getPassword(), user.getPassword()));
+    }
+
+    @Test
+    void testUpdateUserInvalidPassword() {
+        saveUser("test", "test", VALID_TOKEN, futureExpiry());
+
+        UpdateUserRequest request = new UpdateUserRequest();
+        request.setPassword("update");
+
+        WebResponse<Void> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNotNull(response.getErrors());
     }
 }
