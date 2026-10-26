@@ -2,6 +2,7 @@ package contactmanagement.service;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
+import contactmanagement.model.UpdateUserRequest;
 import contactmanagement.model.UserResponse;
 
 /**
@@ -28,4 +29,6 @@ public interface UserService {
      * @return the user's username and name, without the password hash or token
      */
     UserResponse get(User user);
+
+    UserResponse update(User user, UpdateUserRequest request);
 }

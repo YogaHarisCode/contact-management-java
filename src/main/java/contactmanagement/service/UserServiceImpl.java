@@ -2,6 +2,7 @@ package contactmanagement.service;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.RegisterUserRequest;
+import contactmanagement.model.UpdateUserRequest;
 import contactmanagement.model.UserResponse;
 import contactmanagement.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Objects;
 
 /**
  * Default {@link UserService} implementation backed by Spring Data JPA.
@@ -75,6 +78,22 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserResponse get(User user) {
         log.debug("Get current user: username={}", user.getUsername());
+        return toUserResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse update(User user, UpdateUserRequest request) {
+        if (Objects.nonNull(request.getName())){
+            user.setName(request.getName());
+        }
+
+        if (Objects.nonNull(request.getPassword())){
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        userRepository.save(user);
+
         return toUserResponse(user);
     }
 
