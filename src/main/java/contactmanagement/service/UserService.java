@@ -30,5 +30,16 @@ public interface UserService {
      */
     UserResponse get(User user);
 
+    /**
+     * Updates the name and/or password of an already authenticated user.
+     *
+     * <p>Only the fields that are not {@code null} in the request are changed; the others keep
+     * their current value. A new password is hashed with BCrypt before it is stored. The
+     * username and the authentication token are never modified.
+     *
+     * @param user    the authenticated user, resolved from the {@code X-API-TOKEN} header
+     * @param request the validated update data; every field is optional
+     * @return the user's username and name after the update, without the password hash or token
+     */
     UserResponse update(User user, UpdateUserRequest request);
 }

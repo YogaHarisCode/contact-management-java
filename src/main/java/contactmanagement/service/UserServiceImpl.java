@@ -81,6 +81,12 @@ public class UserServiceImpl implements UserService {
         return toUserResponse(user);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The change is applied to the user that was loaded while resolving the token, so no
+     * extra lookup is needed. Only which fields are present is logged, never their values.
+     */
     @Override
     @Transactional
     public UserResponse update(User user, UpdateUserRequest request) {
@@ -92,14 +98,17 @@ public class UserServiceImpl implements UserService {
         log.debug("Update user started: username={}, nameProvided={}, passwordProvided={}",
                 username, nameProvided, passwordProvided);
 
+        // PATCH semantics: a null field means "keep the current value".
         if (nameProvided){
             user.setName(request.getName());
         }
 
         if (passwordProvided){
+            // Never store the raw password: only the BCrypt hash is persisted.
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
 
+        // The loaded user is not "new" (see User#isNew), so save() merges instead of inserting.
         userRepository.save(user);
 
         log.info("User updated: username={}, nameUpdated={}, passwordUpdated={}",
