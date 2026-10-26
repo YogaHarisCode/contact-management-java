@@ -6,14 +6,15 @@ endpoint and centralized error handling.
 
 ## Features
 
-| Module  | Feature                          | Status      |
-|---------|----------------------------------|-------------|
-| User    | Register user                    | Done        |
-| User    | Login (token authentication)     | Done        |
-| User    | Get current user profile         | Done        |
-| User    | Update profile, logout           | Planned     |
-| Contact | Create, update, get, search, delete | Planned  |
-| Address | Create, update, get, list, delete   | Planned  |
+| Module  | Feature                             | Status  |
+|---------|-------------------------------------|---------|
+| User    | Register user                       | Done    |
+| User    | Login (token authentication)        | Done    |
+| User    | Get current user profile            | Done    |
+| User    | Update current user profile         | Done    |
+| User    | Logout                              | Planned |
+| Contact | Create, update, get, search, delete | Planned |
+| Address | Create, update, get, list, delete   | Planned |
 
 ## Tech Stack
 
@@ -25,7 +26,7 @@ endpoint and centralized error handling.
 | Validation  | Jakarta Bean Validation                                        |
 | Security    | `spring-security-crypto` (BCrypt hashing, no filter chain)     |
 | Utilities   | Lombok, SLF4J                                                  |
-| Testing     | JUnit 5, Mockito, Spring Boot Test (`RestTestClient`)          |
+| Testing     | JUnit Jupiter, Mockito, Spring Boot Test (`RestTestClient`)    |
 | Build       | Maven                                                          |
 
 ## Prerequisites
@@ -70,11 +71,11 @@ CREATE TABLE users (
 Configuration is read from environment variables, with local-development defaults defined in
 `src/main/resources/application.properties`:
 
-| Variable            | Default                                          | Description              |
-|---------------------|--------------------------------------------------|--------------------------|
-| `DATABASE_URL`      | `jdbc:mysql://localhost:3306/contact_management` | JDBC URL                 |
-| `DATABASE_USERNAME` | `root`                                           | Database user            |
-| `DATABASE_PASSWORD` | `1234`                                           | Database password        |
+| Variable            | Default                                          | Description                                  |
+|---------------------|--------------------------------------------------|----------------------------------------------|
+| `DATABASE_URL`      | `jdbc:mysql://localhost:3306/contact_management` | JDBC URL                                     |
+| `DATABASE_USERNAME` | `root`                                           | Database user                                |
+| `DATABASE_PASSWORD` | `1234`                                           | Database password                            |
 | `LOG_LEVEL`         | `INFO`                                           | Log level of the `contactmanagement` package |
 
 Set your own credentials before running (the defaults are for local development only).
@@ -117,6 +118,12 @@ curl -X POST http://localhost:8080/api/auth/login \
 # Get the current user
 curl http://localhost:8080/api/users/current \
   -H "Accept: application/json" -H "X-API-TOKEN: <token>"
+
+# Update the current user
+curl -X PATCH http://localhost:8080/api/users/current \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "X-API-TOKEN: <token>" \
+  -d '{"name":"John Doe Updated"}'
 ```
 
 ## API Documentation
@@ -135,6 +142,15 @@ Every response uses the same envelope. A successful response carries `data`, a f
 ```
 
 Protected endpoints require the `X-API-TOKEN` header with the token returned by login.
+
+### Endpoint summary
+
+| Method  | URL                  | Auth  | Description                  |
+|---------|----------------------|-------|------------------------------|
+| `POST`  | `/api/users`         | No    | Register a new user          |
+| `POST`  | `/api/auth/login`    | No    | Log in and receive a token   |
+| `GET`   | `/api/users/current` | Token | Get the current user profile |
+| `PATCH` | `/api/users/current` | Token | Update the current user      |
 
 ### Register User
 
@@ -158,12 +174,12 @@ Request body:
 
 Responses:
 
-| Status | Condition                      | Body                                                                  |
-|--------|--------------------------------|-----------------------------------------------------------------------|
-| 200    | User created                   | `{"data":{"username":"johndoe","name":"John Doe"}}`                   |
+| Status | Condition                      | Body                                                                               |
+|--------|--------------------------------|------------------------------------------------------------------------------------|
+| 200    | User created                   | `{"data":{"username":"johndoe","name":"John Doe"}}`                                |
 | 400    | Validation failed              | `{"errors":"password size must be between 8 and 100; username must not be blank"}` |
-| 400    | Username already registered    | `{"errors":"Username already exists"}`                                |
-| 400    | Missing or malformed JSON body | `{"errors":"Malformed or missing request body"}`                      |
+| 400    | Username already registered    | `{"errors":"Username already exists"}`                                             |
+| 400    | Missing or malformed JSON body | `{"errors":"Malformed or missing request body"}`                                   |
 
 The password is hashed with BCrypt before it is stored and is never returned.
 
@@ -196,16 +212,54 @@ for 30 days. A new login replaces the previous token.
 
 Headers:
 
-| Header        | Description                         |
-|---------------|-------------------------------------|
+| Header        | Description                          |
+|---------------|--------------------------------------|
 | `X-API-TOKEN` | Token returned by the login endpoint |
 
 Responses:
 
-| Status | Condition                                                          | Body                                                |
-|--------|--------------------------------------------------------------------|-----------------------------------------------------|
-| 200    | Token valid                                                        | `{"data":{"username":"johndoe","name":"John Doe"}}` |
-| 401    | Header missing or blank, token unknown, or token expired           | `{"errors":"Unauthorized"}`                         |
+| Status | Condition                                                | Body                                                |
+|--------|----------------------------------------------------------|-----------------------------------------------------|
+| 200    | Token valid                                              | `{"data":{"username":"johndoe","name":"John Doe"}}` |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}`                         |
+
+### Update Current User
+
+`PATCH /api/users/current` (requires `X-API-TOKEN`)
+
+Headers:
+
+| Header         | Description                          |
+|----------------|--------------------------------------|
+| `X-API-TOKEN`  | Token returned by the login endpoint |
+| `Content-Type` | `application/json`                   |
+
+Request body. Every field is optional, and an omitted field keeps its current value:
+
+| Field      | Type   | Rules                                                      |
+|------------|--------|------------------------------------------------------------|
+| `name`     | string | Max 100 chars, must not be blank                           |
+| `password` | string | 8 to 100 chars, must not be blank; stored as a BCrypt hash |
+
+```json
+{
+  "name": "John Doe Updated",
+  "password": "newsecretpassword"
+}
+```
+
+Responses:
+
+| Status | Condition                                      | Body                                                      |
+|--------|------------------------------------------------|-----------------------------------------------------------|
+| 200    | Profile updated                                | `{"data":{"username":"johndoe","name":"John Doe Updated"}}` |
+| 400    | Validation failed (for example short password) | `{"errors":"password size must be between 8 and 100"}`    |
+| 400    | Missing or malformed JSON body                 | `{"errors":"Malformed or missing request body"}`          |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}`                     |
+
+Authentication is checked before the body is validated, so a request without a valid token
+always returns 401, even when the body is also invalid. The username and the token are never
+changed by this endpoint, and the password is never returned.
 
 ## Testing
 
@@ -213,21 +267,21 @@ Responses:
 mvn test
 ```
 
-| Test class                       | Type                                       | Needs MySQL |
-|----------------------------------|--------------------------------------------|-------------|
-| `UserControllerTest`             | `@SpringBootTest` integration (register, get current user) | Yes |
-| `AuthControllerTest`             | `@SpringBootTest` integration (login)      | Yes         |
-| `AuthControllerWebMvcTest`       | `@WebMvcTest`, `AuthService` mocked        | No          |
-| `UserControllerGetUserWebMvcTest`| `@WebMvcTest`, service and repository mocked | No        |
-| `AuthServiceImplTest`            | Mockito unit test                          | No          |
-| `UserServiceImplTest`            | Mockito unit test                          | No          |
-| `UserArgumentResolverTest`       | Mockito unit test                          | No          |
+| Test class                 | Type                                                                  | Needs MySQL |
+|----------------------------|-----------------------------------------------------------------------|-------------|
+| `UserControllerTest`       | `@SpringBootTest` integration (register, get and update current user) | Yes         |
+| `AuthControllerTest`       | `@SpringBootTest` integration (login)                                 | Yes         |
+| `UserControllerWebMvcTest` | `@WebMvcTest`, service and repository mocked (get and update)         | No          |
+| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` mocked                                   | No          |
+| `UserServiceImplTest`      | Mockito unit test (get and update current user)                       | No          |
+| `AuthServiceImplTest`      | Mockito unit test                                                     | No          |
+| `UserArgumentResolverTest` | Mockito unit test                                                     | No          |
 
 The integration tests use the datasource from `application.properties` and delete all rows in
 `users`. Point them to a dedicated test database. To run only the tests that need no database:
 
 ```bash
-mvn test -Dtest='AuthControllerWebMvcTest,UserControllerGetUserWebMvcTest,AuthServiceImplTest,UserServiceImplTest,UserArgumentResolverTest'
+mvn test -Dtest='UserControllerWebMvcTest*,AuthControllerWebMvcTest,AuthServiceImplTest,UserServiceImplTest,UserArgumentResolverTest'
 ```
 
 ## Project Structure
@@ -237,67 +291,3 @@ contact-management-java
 ├── pom.xml
 └── src
     ├── main
-    │   ├── java/contactmanagement
-    │   │   ├── ContactManagementJavaApplication.java
-    │   │   ├── config
-    │   │   │   ├── PasswordEncoderConfig.java
-    │   │   │   └── WebConfiguration.java
-    │   │   ├── controller
-    │   │   │   ├── AuthController.java
-    │   │   │   └── UserController.java
-    │   │   ├── entity
-    │   │   │   └── User.java
-    │   │   ├── exception
-    │   │   │   └── GlobalExceptionHandler.java
-    │   │   ├── model
-    │   │   │   ├── LoginResponse.java
-    │   │   │   ├── LoginUserRequest.java
-    │   │   │   ├── RegisterUserRequest.java
-    │   │   │   ├── UserResponse.java
-    │   │   │   └── WebResponse.java
-    │   │   ├── repository
-    │   │   │   └── UserRepository.java
-    │   │   ├── resolver
-    │   │   │   └── UserArgumentResolver.java
-    │   │   └── service
-    │   │       ├── AuthService.java
-    │   │       ├── AuthServiceImpl.java
-    │   │       ├── UserService.java
-    │   │       └── UserServiceImpl.java
-    │   └── resources
-    │       └── application.properties
-    └── test/java/contactmanagement
-        ├── controller
-        │   ├── AuthControllerTest.java
-        │   ├── AuthControllerWebMvcTest.java
-        │   ├── UserControllerGetUserWebMvcTest.java
-        │   └── UserControllerTest.java
-        ├── resolver
-        │   └── UserArgumentResolverTest.java
-        └── service
-            ├── AuthServiceImplTest.java
-            └── UserServiceImplTest.java
-```
-
-## Architecture and Conventions
-
-- **Layers:** `controller` handles HTTP only, `service` holds business rules, `repository` is
-  Spring Data, `model` holds request/response DTOs and the envelope, `entity` holds JPA
-  entities, `resolver` authenticates requests, `exception` holds the global handler, and
-  `config` holds beans and MVC configuration.
-- **Authentication:** `UserArgumentResolver` reads the `X-API-TOKEN` header and injects the
-  current `User` into controller methods that declare a `User` parameter.
-- **Errors:** services and the resolver throw `ResponseStatusException`;
-  `GlobalExceptionHandler` converts every error into the standard envelope.
-- **Validation:** `@Valid @RequestBody` on controllers, Bean Validation annotations on DTOs.
-- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never
-  logged.
-
-## Current Limitations
-
-- The schema is created manually; there is no migration tool yet.
-- No rate limiting or brute-force protection on registration and login.
-- Tokens are stored in plain text in `users.token`.
-- `application.properties` contains local-development fallbacks for the database credentials;
-  remove them before any real deployment.
-- Contact and address endpoints, profile update, and logout are specified but not implemented yet.
