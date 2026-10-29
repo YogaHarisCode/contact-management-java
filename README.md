@@ -12,7 +12,7 @@ endpoint and centralized error handling.
 | User    | Login (token authentication)        | Done    |
 | User    | Get current user profile            | Done    |
 | User    | Update current user profile         | Done    |
-| User    | Logout                              | Planned |
+| User    | Logout                              | Done    |
 | Contact | Create, update, get, search, delete | Planned |
 | Address | Create, update, get, list, delete   | Planned |
 
@@ -56,13 +56,13 @@ CREATE DATABASE IF NOT EXISTS contact_management CHARACTER SET utf8mb4;
 USE contact_management;
 
 CREATE TABLE users (
-                     username         VARCHAR(100) NOT NULL,
-                     password         VARCHAR(100) NOT NULL,
-                     name             VARCHAR(100) NOT NULL,
-                     token            VARCHAR(100),
-                     token_expired_at BIGINT,
-                     PRIMARY KEY (username),
-                     CONSTRAINT unique_token UNIQUE (token)
+    username         VARCHAR(100) NOT NULL,
+    password         VARCHAR(100) NOT NULL,
+    name             VARCHAR(100) NOT NULL,
+    token            VARCHAR(100),
+    token_expired_at BIGINT,
+    PRIMARY KEY (username),
+    CONSTRAINT unique_token UNIQUE (token)
 ) ENGINE = InnoDB;
 ```
 
@@ -291,70 +291,3 @@ contact-management-java
 ├── pom.xml
 └── src
     ├── main
-    │   ├── java/contactmanagement
-    │   │   ├── ContactManagementJavaApplication.java
-    │   │   ├── config
-    │   │   │   ├── PasswordEncoderConfig.java
-    │   │   │   └── WebConfiguration.java
-    │   │   ├── controller
-    │   │   │   ├── AuthController.java
-    │   │   │   └── UserController.java
-    │   │   ├── entity
-    │   │   │   └── User.java
-    │   │   ├── exception
-    │   │   │   └── GlobalExceptionHandler.java
-    │   │   ├── model
-    │   │   │   ├── LoginResponse.java
-    │   │   │   ├── LoginUserRequest.java
-    │   │   │   ├── RegisterUserRequest.java
-    │   │   │   ├── UpdateUserRequest.java
-    │   │   │   ├── UserResponse.java
-    │   │   │   └── WebResponse.java
-    │   │   ├── repository
-    │   │   │   └── UserRepository.java
-    │   │   ├── resolver
-    │   │   │   └── UserArgumentResolver.java
-    │   │   └── service
-    │   │       ├── AuthService.java
-    │   │       ├── AuthServiceImpl.java
-    │   │       ├── UserService.java
-    │   │       └── UserServiceImpl.java
-    │   └── resources
-    │       └── application.properties
-    └── test/java/contactmanagement
-        ├── controller
-        │   ├── AuthControllerTest.java
-        │   ├── AuthControllerWebMvcTest.java
-        │   ├── UserControllerTest.java
-        │   └── UserControllerWebMvcTest.java
-        ├── resolver
-        │   └── UserArgumentResolverTest.java
-        └── service
-            ├── AuthServiceImplTest.java
-            └── UserServiceImplTest.java
-```
-
-## Architecture and Conventions
-
-- **Layers:** `controller` handles HTTP only, `service` holds business rules, `repository` is
-  Spring Data, `model` holds request/response DTOs and the envelope, `entity` holds JPA
-  entities, `resolver` authenticates requests, `exception` holds the global handler, and
-  `config` holds beans and MVC configuration.
-- **Authentication:** `UserArgumentResolver` reads the `X-API-TOKEN` header and injects the
-  current `User` into controller methods that declare a `User` parameter. An endpoint is
-  protected only if it declares that parameter.
-- **Errors:** services and the resolver throw `ResponseStatusException`;
-  `GlobalExceptionHandler` converts every error into the standard envelope.
-- **Validation:** `@Valid @RequestBody` on controllers, Bean Validation annotations on DTOs.
-- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never
-  logged.
-
-## Current Limitations
-
-- The schema is created manually; there is no migration tool yet.
-- No rate limiting or brute-force protection on registration and login.
-- Tokens are stored in plain text in `users.token`.
-- Changing the password does not revoke the active token.
-- `application.properties` contains local-development fallbacks for the database credentials;
-  remove them before any real deployment.
-- Contact and address endpoints and logout are specified but not implemented yet.
