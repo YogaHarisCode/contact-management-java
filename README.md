@@ -56,13 +56,13 @@ CREATE DATABASE IF NOT EXISTS contact_management CHARACTER SET utf8mb4;
 USE contact_management;
 
 CREATE TABLE users (
-    username         VARCHAR(100) NOT NULL,
-    password         VARCHAR(100) NOT NULL,
-    name             VARCHAR(100) NOT NULL,
-    token            VARCHAR(100),
-    token_expired_at BIGINT,
-    PRIMARY KEY (username),
-    CONSTRAINT unique_token UNIQUE (token)
+                       username         VARCHAR(100) NOT NULL,
+                       password         VARCHAR(100) NOT NULL,
+                       name             VARCHAR(100) NOT NULL,
+                       token            VARCHAR(100),
+                       token_expired_at BIGINT,
+                       PRIMARY KEY (username),
+                       CONSTRAINT unique_token UNIQUE (token)
 ) ENGINE = InnoDB;
 ```
 
@@ -124,6 +124,11 @@ curl -X PATCH http://localhost:8080/api/users/current \
   -H "Content-Type: application/json" -H "Accept: application/json" \
   -H "X-API-TOKEN: <token>" \
   -d '{"name":"John Doe Updated"}'
+  
+  
+# Logout (invalidates the token)
+curl -X DELETE http://localhost:8080/api/auth/logout \
+  -H "Accept: application/json" -H "X-API-TOKEN: <token>"
 ```
 
 ## API Documentation
@@ -145,12 +150,13 @@ Protected endpoints require the `X-API-TOKEN` header with the token returned by 
 
 ### Endpoint summary
 
-| Method  | URL                  | Auth  | Description                  |
-|---------|----------------------|-------|------------------------------|
-| `POST`  | `/api/users`         | No    | Register a new user          |
-| `POST`  | `/api/auth/login`    | No    | Log in and receive a token   |
-| `GET`   | `/api/users/current` | Token | Get the current user profile |
-| `PATCH` | `/api/users/current` | Token | Update the current user      |
+| Method   | URL                  | Auth  | Description                            |
+|----------|----------------------|-------|----------------------------------------|
+| `POST`   | `/api/users`         | No    | Register a new user                    |
+| `POST`   | `/api/auth/login`    | No    | Log in and receive a token             |
+| `GET`    | `/api/users/current` | Token | Get the current user profile           |
+| `PATCH`  | `/api/users/current` | Token | Update the current user                |
+| `DELETE` | `/api/auth/logout`   | Token | Log out and invalidate the current token |
 
 ### Register User
 
@@ -261,6 +267,29 @@ Authentication is checked before the body is validated, so a request without a v
 always returns 401, even when the body is also invalid. The username and the token are never
 changed by this endpoint, and the password is never returned.
 
+### Logout User
+
+`DELETE /api/auth/logout` (requires `X-API-TOKEN`)
+
+Headers:
+
+| Header        | Description                          |
+|---------------|--------------------------------------|
+| `X-API-TOKEN` | Token returned by the login endpoint |
+
+No request body.
+
+Responses:
+
+| Status | Condition                                                | Body                        |
+|--------|----------------------------------------------------------|-----------------------------|
+| 200    | Token valid, session ended                               | `{"data":"OK"}`             |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}` |
+
+Logout clears the token and its expiry time of the current user. The old token is rejected
+from then on, so a second logout with the same token returns 401. Other users are not
+affected, and the user can log in again to receive a new token.
+
 ## Testing
 
 ```bash
@@ -270,11 +299,11 @@ mvn test
 | Test class                 | Type                                                                  | Needs MySQL |
 |----------------------------|-----------------------------------------------------------------------|-------------|
 | `UserControllerTest`       | `@SpringBootTest` integration (register, get and update current user) | Yes         |
-| `AuthControllerTest`       | `@SpringBootTest` integration (login)                                 | Yes         |
+| `AuthControllerTest`       | `@SpringBootTest` integration (login and logout)                      | Yes         |
 | `UserControllerWebMvcTest` | `@WebMvcTest`, service and repository mocked (get and update)         | No          |
-| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` mocked                                   | No          |
+| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` and `UserRepository` mocked              | No          |
 | `UserServiceImplTest`      | Mockito unit test (get and update current user)                       | No          |
-| `AuthServiceImplTest`      | Mockito unit test                                                     | No          |
+| `AuthServiceImplTest`      | Mockito unit test (login and logout)                                  | No          |
 | `UserArgumentResolverTest` | Mockito unit test                                                     | No          |
 
 The integration tests use the datasource from `application.properties` and delete all rows in
@@ -291,3 +320,70 @@ contact-management-java
 ├── pom.xml
 └── src
     ├── main
+    │   ├── java/contactmanagement
+    │   │   ├── ContactManagementJavaApplication.java
+    │   │   ├── config
+    │   │   │   ├── PasswordEncoderConfig.java
+    │   │   │   └── WebConfiguration.java
+    │   │   ├── controller
+    │   │   │   ├── AuthController.java
+    │   │   │   └── UserController.java
+    │   │   ├── entity
+    │   │   │   └── User.java
+    │   │   ├── exception
+    │   │   │   └── GlobalExceptionHandler.java
+    │   │   ├── model
+    │   │   │   ├── LoginResponse.java
+    │   │   │   ├── LoginUserRequest.java
+    │   │   │   ├── RegisterUserRequest.java
+    │   │   │   ├── UpdateUserRequest.java
+    │   │   │   ├── UserResponse.java
+    │   │   │   └── WebResponse.java
+    │   │   ├── repository
+    │   │   │   └── UserRepository.java
+    │   │   ├── resolver
+    │   │   │   └── UserArgumentResolver.java
+    │   │   └── service
+    │   │       ├── AuthService.java
+    │   │       ├── AuthServiceImpl.java
+    │   │       ├── UserService.java
+    │   │       └── UserServiceImpl.java
+    │   └── resources
+    │       └── application.properties
+    └── test/java/contactmanagement
+        ├── controller
+        │   ├── AuthControllerTest.java
+        │   ├── AuthControllerWebMvcTest.java
+        │   ├── UserControllerTest.java
+        │   └── UserControllerWebMvcTest.java
+        ├── resolver
+        │   └── UserArgumentResolverTest.java
+        └── service
+            ├── AuthServiceImplTest.java
+            └── UserServiceImplTest.java
+```
+
+## Architecture and Conventions
+
+- **Layers:** `controller` handles HTTP only, `service` holds business rules, `repository` is
+  Spring Data, `model` holds request/response DTOs and the envelope, `entity` holds JPA
+  entities, `resolver` authenticates requests, `exception` holds the global handler, and
+  `config` holds beans and MVC configuration.
+- **Authentication:** `UserArgumentResolver` reads the `X-API-TOKEN` header and injects the
+  current `User` into controller methods that declare a `User` parameter. An endpoint is
+  protected only if it declares that parameter.
+- **Errors:** services and the resolver throw `ResponseStatusException`;
+  `GlobalExceptionHandler` converts every error into the standard envelope.
+- **Validation:** `@Valid @RequestBody` on controllers, Bean Validation annotations on DTOs.
+- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never
+  logged.
+
+## Current Limitations
+
+- The schema is created manually; there is no migration tool yet.
+- No rate limiting or brute-force protection on registration and login.
+- Tokens are stored in plain text in `users.token`.
+- Changing the password does not revoke the active token.
+- `application.properties` contains local-development fallbacks for the database credentials;
+  remove them before any real deployment.
+- Contact and address endpoints are specified but not implemented yet.
