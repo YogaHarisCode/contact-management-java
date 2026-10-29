@@ -1,5 +1,6 @@
 package contactmanagement.service;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.LoginResponse;
 import contactmanagement.model.LoginUserRequest;
 
@@ -20,4 +21,6 @@ public interface AuthService {
      *         message so the response does not reveal which usernames are registered
      */
     LoginResponse login(LoginUserRequest request);
+
+    void logout(User user);
 }

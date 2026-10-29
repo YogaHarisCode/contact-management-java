@@ -95,6 +95,14 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
+    @Override
+    @Transactional
+    public void logout(User user) {
+        user.setToken(null);
+        user.setTokenExpiredAt(null);
+        userRepository.save(user);
+    }
+
     /**
      * Builds the exception used for every failed login.
      *
