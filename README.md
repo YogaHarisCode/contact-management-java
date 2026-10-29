@@ -56,13 +56,13 @@ CREATE DATABASE IF NOT EXISTS contact_management CHARACTER SET utf8mb4;
 USE contact_management;
 
 CREATE TABLE users (
-                     username         VARCHAR(100) NOT NULL,
-                     password         VARCHAR(100) NOT NULL,
-                     name             VARCHAR(100) NOT NULL,
-                     token            VARCHAR(100),
-                     token_expired_at BIGINT,
-                     PRIMARY KEY (username),
-                     CONSTRAINT unique_token UNIQUE (token)
+                       username         VARCHAR(100) NOT NULL,
+                       password         VARCHAR(100) NOT NULL,
+                       name             VARCHAR(100) NOT NULL,
+                       token            VARCHAR(100),
+                       token_expired_at BIGINT,
+                       PRIMARY KEY (username),
+                       CONSTRAINT unique_token UNIQUE (token)
 ) ENGINE = InnoDB;
 ```
 
