@@ -12,7 +12,7 @@ endpoint and centralized error handling.
 | User    | Login (token authentication)        | Done    |
 | User    | Get current user profile            | Done    |
 | User    | Update current user profile         | Done    |
-| User    | Logout                              | Planned |
+| User    | Logout                              | Done    |
 | Contact | Create, update, get, search, delete | Planned |
 | Address | Create, update, get, list, delete   | Planned |
 
@@ -124,6 +124,11 @@ curl -X PATCH http://localhost:8080/api/users/current \
   -H "Content-Type: application/json" -H "Accept: application/json" \
   -H "X-API-TOKEN: <token>" \
   -d '{"name":"John Doe Updated"}'
+  
+  
+# Logout (invalidates the token)
+curl -X DELETE http://localhost:8080/api/auth/logout \
+  -H "Accept: application/json" -H "X-API-TOKEN: <token>"
 ```
 
 ## API Documentation
@@ -145,12 +150,13 @@ Protected endpoints require the `X-API-TOKEN` header with the token returned by 
 
 ### Endpoint summary
 
-| Method  | URL                  | Auth  | Description                  |
-|---------|----------------------|-------|------------------------------|
-| `POST`  | `/api/users`         | No    | Register a new user          |
-| `POST`  | `/api/auth/login`    | No    | Log in and receive a token   |
-| `GET`   | `/api/users/current` | Token | Get the current user profile |
-| `PATCH` | `/api/users/current` | Token | Update the current user      |
+| Method   | URL                  | Auth  | Description                            |
+|----------|----------------------|-------|----------------------------------------|
+| `POST`   | `/api/users`         | No    | Register a new user                    |
+| `POST`   | `/api/auth/login`    | No    | Log in and receive a token             |
+| `GET`    | `/api/users/current` | Token | Get the current user profile           |
+| `PATCH`  | `/api/users/current` | Token | Update the current user                |
+| `DELETE` | `/api/auth/logout`   | Token | Log out and invalidate the current token |
 
 ### Register User
 
@@ -261,6 +267,29 @@ Authentication is checked before the body is validated, so a request without a v
 always returns 401, even when the body is also invalid. The username and the token are never
 changed by this endpoint, and the password is never returned.
 
+### Logout User
+
+`DELETE /api/auth/logout` (requires `X-API-TOKEN`)
+
+Headers:
+
+| Header        | Description                          |
+|---------------|--------------------------------------|
+| `X-API-TOKEN` | Token returned by the login endpoint |
+
+No request body.
+
+Responses:
+
+| Status | Condition                                                | Body                        |
+|--------|----------------------------------------------------------|-----------------------------|
+| 200    | Token valid, session ended                               | `{"data":"OK"}`             |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}` |
+
+Logout clears the token and its expiry time of the current user. The old token is rejected
+from then on, so a second logout with the same token returns 401. Other users are not
+affected, and the user can log in again to receive a new token.
+
 ## Testing
 
 ```bash
@@ -270,11 +299,11 @@ mvn test
 | Test class                 | Type                                                                  | Needs MySQL |
 |----------------------------|-----------------------------------------------------------------------|-------------|
 | `UserControllerTest`       | `@SpringBootTest` integration (register, get and update current user) | Yes         |
-| `AuthControllerTest`       | `@SpringBootTest` integration (login)                                 | Yes         |
+| `AuthControllerTest`       | `@SpringBootTest` integration (login and logout)                      | Yes         |
 | `UserControllerWebMvcTest` | `@WebMvcTest`, service and repository mocked (get and update)         | No          |
-| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` mocked                                   | No          |
+| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` and `UserRepository` mocked              | No          |
 | `UserServiceImplTest`      | Mockito unit test (get and update current user)                       | No          |
-| `AuthServiceImplTest`      | Mockito unit test                                                     | No          |
+| `AuthServiceImplTest`      | Mockito unit test (login and logout)                                  | No          |
 | `UserArgumentResolverTest` | Mockito unit test                                                     | No          |
 
 The integration tests use the datasource from `application.properties` and delete all rows in
@@ -357,4 +386,4 @@ contact-management-java
 - Changing the password does not revoke the active token.
 - `application.properties` contains local-development fallbacks for the database credentials;
   remove them before any real deployment.
-- Contact and address endpoints and logout are specified but not implemented yet.
+- Contact and address endpoints are specified but not implemented yet.
