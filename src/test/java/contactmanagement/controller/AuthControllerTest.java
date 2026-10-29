@@ -37,6 +37,9 @@ class AuthControllerTest {
     private static final String PASSWORD = "test1234";
     private static final String INVALID_CREDENTIALS = "Username or password wrong";
     private static final long TOKEN_TTL_MILLIS = Duration.ofDays(30).toMillis();
+    private static final String LOGOUT_URI = "/api/auth/logout";
+    private static final String TOKEN_HEADER = "X-API-TOKEN";
+    private static final String ACTIVE_TOKEN = "active-token";
 
     @Autowired
     private RestTestClient client;
@@ -225,6 +228,143 @@ class AuthControllerTest {
         assertEquals("Malformed or missing request body", response.getErrors());
     }
 
+    /** A valid token returns 200 and both token columns become NULL in the database. */
+    @Test
+    void shouldReturnOkAndClearTokenWhenLogoutTokenIsValid() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+
+        WebResponse<String> response = deleteLogout(ACTIVE_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("OK", response.getData());
+        assertNull(response.getErrors());
+
+        User saved = userRepository.findById(USERNAME).orElseThrow();
+        assertNull(saved.getToken());
+        assertNull(saved.getTokenExpiredAt());
+        assertTrue(passwordEncoder.matches(PASSWORD, saved.getPassword()));
+    }
+
+    /** The old token is rejected when it is reused for a second logout. */
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutIsCalledTwiceWithSameToken() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+
+        deleteLogout(ACTIVE_TOKEN).expectStatus().isOk();
+
+        WebResponse<String> response = deleteLogout(ACTIVE_TOKEN)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+    }
+
+    /** After logout the old token no longer opens a protected endpoint. */
+    @Test
+    void shouldRejectOldTokenOnProtectedEndpointWhenLogoutSucceeded() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+
+        deleteLogout(ACTIVE_TOKEN).expectStatus().isOk();
+
+        client.get()
+                .uri("/api/users/current")
+                .accept(MediaType.APPLICATION_JSON)
+                .header(TOKEN_HEADER, ACTIVE_TOKEN)
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    /** Logout then login must issue a brand-new, working token. */
+    @Test
+    void shouldIssueNewTokenWhenUserLogsInAgainAfterLogout() {
+        String firstToken = postLoginOk(login(USERNAME, PASSWORD)).getData().getToken();
+
+        deleteLogout(firstToken).expectStatus().isOk();
+
+        String secondToken = postLoginOk(login(USERNAME, PASSWORD)).getData().getToken();
+
+        assertNotEquals(firstToken, secondToken);
+        assertEquals(secondToken, userRepository.findById(USERNAME).orElseThrow().getToken());
+    }
+
+    /** Logging out one user must not touch another user's token. */
+    @Test
+    void shouldNotAffectOtherUsersTokenWhenLogoutSucceeds() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+        givenOtherUserHasToken("other-user", "other-token", 123_456L);
+
+        deleteLogout(ACTIVE_TOKEN).expectStatus().isOk();
+
+        User other = userRepository.findById("other-user").orElseThrow();
+        assertEquals("other-token", other.getToken());
+        assertEquals(123_456L, other.getTokenExpiredAt());
+    }
+
+    /** A request without the token header returns 401. */
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenHeaderIsMissing() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+
+        WebResponse<String> response = deleteLogout(null)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Unauthorized", response.getErrors());
+        assertEquals(ACTIVE_TOKEN, userRepository.findById(USERNAME).orElseThrow().getToken());
+    }
+
+    /** A token nobody holds returns 401 and leaves existing tokens untouched. */
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenIsNotFound() {
+        givenUserHasToken(ACTIVE_TOKEN, System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+
+        WebResponse<String> response = deleteLogout("fake-token")
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+        assertEquals(ACTIVE_TOKEN, userRepository.findById(USERNAME).orElseThrow().getToken());
+    }
+
+    /** An expired token returns 401 and the stored values are not modified. */
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenIsExpired() {
+        long expiredAt = System.currentTimeMillis() - 60_000L;
+        givenUserHasToken(ACTIVE_TOKEN, expiredAt);
+
+        WebResponse<String> response = deleteLogout(ACTIVE_TOKEN)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+
+        User unchanged = userRepository.findById(USERNAME).orElseThrow();
+        assertEquals(ACTIVE_TOKEN, unchanged.getToken());
+        assertEquals(expiredAt, unchanged.getTokenExpiredAt());
+    }
+
     /** Shortcut for building a login request. */
     private static LoginUserRequest login(String username, String password) {
         return LoginUserRequest.builder()
@@ -284,5 +424,27 @@ class AuthControllerTest {
                 })
                 .returnResult()
                 .getResponseBody();
+    }
+
+    /** Sends DELETE to the logout endpoint; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec deleteLogout(String token) {
+        RestTestClient.RequestHeadersSpec<?> request = client.delete()
+                .uri(LOGOUT_URI)
+                .accept(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            request = request.header(TOKEN_HEADER, token);
+        }
+        return request.exchange();
+    }
+
+    /** Stores a second user holding a known token, to verify logout is scoped to one user. */
+    private void givenOtherUserHasToken(String username, String token, long expiredAt) {
+        User other = new User();
+        other.setUsername(username);
+        other.setPassword(passwordEncoder.encode(PASSWORD));
+        other.setName(username);
+        other.setToken(token);
+        other.setTokenExpiredAt(expiredAt);
+        userRepository.save(other);
     }
 }

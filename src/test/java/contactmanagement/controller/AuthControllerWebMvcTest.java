@@ -1,12 +1,15 @@
 package contactmanagement.controller;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.LoginResponse;
 import contactmanagement.model.LoginUserRequest;
 import contactmanagement.model.WebResponse;
+import contactmanagement.repository.UserRepository;
 import contactmanagement.service.AuthService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -17,6 +20,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,6 +38,13 @@ import static org.mockito.Mockito.when;
 class AuthControllerWebMvcTest {
 
     private static final String LOGIN_URI = "/api/auth/login";
+
+    private static final String LOGOUT_URI = "/api/auth/logout";
+    private static final String TOKEN_HEADER = "X-API-TOKEN";
+    private static final String VALID_TOKEN = "valid-token";
+
+    @MockitoBean
+    private UserRepository userRepository;
 
     @Autowired
     private RestTestClient client;
@@ -164,6 +176,114 @@ class AuthControllerWebMvcTest {
         verifyNoInteractions(authService);
     }
 
+    @Test
+    void shouldReturnOkWhenLogoutTokenIsValid() {
+        User user = userWithToken(Instant.now().plusSeconds(3600).toEpochMilli());
+        when(userRepository.findFirstByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        WebResponse<String> response = deleteLogout(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("OK", response.getData());
+        assertNull(response.getErrors());
+    }
+
+    @Test
+    void shouldPassAuthenticatedUserToServiceWhenLogoutTokenIsValid() {
+        User user = userWithToken(Instant.now().plusSeconds(3600).toEpochMilli());
+        when(userRepository.findFirstByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        deleteLogout(VALID_TOKEN).expectStatus().isOk();
+
+        verify(authService).logout(user);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenHeaderIsMissing() {
+        WebResponse<String> response = deleteLogout(null)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Unauthorized", response.getErrors());
+        verifyNoInteractions(userRepository, authService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void shouldReturnUnauthorizedWhenLogoutTokenHeaderIsBlank(String blankToken) {
+        WebResponse<String> response = deleteLogout(blankToken)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+        verifyNoInteractions(userRepository, authService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenIsNotFound() {
+        when(userRepository.findFirstByToken("unknown-token")).thenReturn(Optional.empty());
+
+        WebResponse<String> response = deleteLogout("unknown-token")
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Unauthorized", response.getErrors());
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenIsExpired() {
+        User user = userWithToken(Instant.now().minusSeconds(60).toEpochMilli());
+        when(userRepository.findFirstByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        WebResponse<String> response = deleteLogout(VALID_TOKEN)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenLogoutTokenHasNoExpiry() {
+        User user = userWithToken(null);
+        when(userRepository.findFirstByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        WebResponse<String> response = deleteLogout(VALID_TOKEN)
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Unauthorized", response.getErrors());
+        verifyNoInteractions(authService);
+    }
+
     /** One invalid payload per constraint: blank, null, and over-length for each field. */
     static Stream<LoginUserRequest> invalidRequests() {
         String tooLong = "a".repeat(101);
@@ -193,5 +313,26 @@ class AuthControllerWebMvcTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .exchange();
+    }
+
+    private static User userWithToken(Long tokenExpiredAt) {
+        User user = new User();
+        user.setUsername("test");
+        user.setPassword("bcrypt-hash");
+        user.setName("Test User");
+        user.setToken(VALID_TOKEN);
+        user.setTokenExpiredAt(tokenExpiredAt);
+        return user;
+    }
+
+    /** Sends DELETE to the logout endpoint; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec deleteLogout(String token) {
+        RestTestClient.RequestHeadersSpec<?> request = client.delete()
+                .uri(LOGOUT_URI)
+                .accept(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            request = request.header(TOKEN_HEADER, token);
+        }
+        return request.exchange();
     }
 }
