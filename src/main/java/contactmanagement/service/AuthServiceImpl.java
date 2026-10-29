@@ -98,9 +98,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(User user) {
+        String username = user.getUsername();
+        log.debug("Logout started: username={}", username);
+
         user.setToken(null);
         user.setTokenExpiredAt(null);
         userRepository.save(user);
+
+        log.info("User logged out: username={}", username);
     }
 
     /**
