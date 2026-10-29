@@ -25,8 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceImplTest {
@@ -179,6 +178,54 @@ class AuthServiceImplTest {
         assertEquals(unknownUser.getReason(), wrongPassword.getReason());
     }
 
+    @Test
+    void shouldClearTokenAndExpiryWhenLogoutIsCalled() {
+        User user = existingUserWithToken();
+
+        authService.logout(user);
+
+        assertNull(user.getToken());
+        assertNull(user.getTokenExpiredAt());
+    }
+
+    @Test
+    void shouldSaveUserWhenLogoutIsCalled() {
+        User user = existingUserWithToken();
+
+        authService.logout(user);
+
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void shouldKeepUsernamePasswordAndNameUnchangedWhenLogoutIsCalled() {
+        User user = existingUserWithToken();
+
+        authService.logout(user);
+
+        assertEquals("test", user.getUsername());
+        assertEquals(USER_HASH, user.getPassword());
+        assertEquals("Test User", user.getName());
+    }
+
+    @Test
+    void shouldNotThrowWhenLogoutIsCalledForUserWithoutToken() {
+        User user = existingUser();
+
+        assertDoesNotThrow(() -> authService.logout(user));
+
+        assertNull(user.getToken());
+        assertNull(user.getTokenExpiredAt());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void shouldNotVerifyPasswordWhenLogoutIsCalled() {
+        authService.logout(existingUserWithToken());
+
+        verify(passwordEncoder, never()).matches(anyString(), anyString());
+    }
+
     private static User existingUser() {
         User user = new User();
         user.setUsername("test");
@@ -192,5 +239,12 @@ class AuthServiceImplTest {
                 .username(username)
                 .password(password)
                 .build();
+    }
+
+    private static User existingUserWithToken() {
+        User user = existingUser();
+        user.setToken("active-token");
+        user.setTokenExpiredAt(System.currentTimeMillis() + TOKEN_TTL_MILLIS);
+        return user;
     }
 }

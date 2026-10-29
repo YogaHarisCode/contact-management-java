@@ -1,5 +1,6 @@
 package contactmanagement.service;
 
+import contactmanagement.entity.User;
 import contactmanagement.model.LoginResponse;
 import contactmanagement.model.LoginUserRequest;
 
@@ -20,4 +21,15 @@ public interface AuthService {
      *         message so the response does not reveal which usernames are registered
      */
     LoginResponse login(LoginUserRequest request);
+
+    /**
+     * Ends the session of an authenticated user by invalidating the current token.
+     *
+     * <p>The token and its expiration time are cleared, so the token can no longer authenticate
+     * requests. The username, password hash, and name are not modified. Calling this method for
+     * a user that has no token is harmless.
+     *
+     * @param user the authenticated user, resolved from the {@code X-API-TOKEN} header
+     */
+    void logout(User user);
 }

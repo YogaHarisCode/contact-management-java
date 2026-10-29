@@ -96,6 +96,28 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * <p>The change is applied to the user that was loaded while resolving the token, so no
+     * extra lookup is needed. Only the username is logged, never the token.
+     */
+    @Override
+    @Transactional
+    public void logout(User user) {
+        String username = user.getUsername();
+        log.debug("Logout started: username={}", username);
+
+        // With both columns null, UserRepository#findFirstByToken no longer matches the old token.
+        user.setToken(null);
+        user.setTokenExpiredAt(null);
+
+        // The loaded user is not "new" (see User#isNew), so save() merges instead of inserting.
+        userRepository.save(user);
+
+        log.info("User logged out: username={}", username);
+    }
+
+    /**
      * Builds the exception used for every failed login.
      *
      * @return a 401 exception carrying the standard error message
