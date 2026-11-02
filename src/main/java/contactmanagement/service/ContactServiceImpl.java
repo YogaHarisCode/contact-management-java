@@ -6,9 +6,11 @@ import contactmanagement.model.ContactResponse;
 import contactmanagement.model.CreateContactRequest;
 import contactmanagement.repository.ContactRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ContactServiceImpl implements ContactService{
@@ -18,6 +20,9 @@ public class ContactServiceImpl implements ContactService{
     @Override
     @Transactional
     public ContactResponse create(User user, CreateContactRequest request) {
+        String username = user.getUsername();
+        log.debug("Create contact started: username={}", username);
+
         Contact contact = new Contact();
         contact.setFirstName(request.getFirstName());
         contact.setLastName(request.getLastName());
@@ -27,6 +32,8 @@ public class ContactServiceImpl implements ContactService{
 
         Contact saved = contactRepository.save(contact);
 
+        // Only identifiers are logged; name, email, and phone are personal data (PII).
+        log.info("Contact created: contactId={}, username={}", saved.getId(), username);
         return toContactResponse(saved);
     }
 
