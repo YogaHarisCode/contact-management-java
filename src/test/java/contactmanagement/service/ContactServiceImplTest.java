@@ -15,9 +15,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -43,7 +41,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldReturnContactResponseWhenDataIsValid() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
         User user = authenticatedUser();
 
         ContactResponse response = contactService.create(user, fullRequest());
@@ -57,7 +55,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldReturnIdOfSavedEntityWhenContactIsCreated() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
 
         ContactResponse response = contactService.create(authenticatedUser(), fullRequest());
 
@@ -66,29 +64,18 @@ class ContactServiceImplTest {
     }
 
     @Test
-    void shouldGenerateUuidAsIdWhenContactIsCreated() {
-        givenSaveReturnsSameEntity();
+    void shouldReturnIdAssignedBySaveWhenContactIsCreated() {
+        givenSaveAssignsGeneratedId();
 
         ContactResponse response = contactService.create(authenticatedUser(), fullRequest());
 
         assertNotNull(response.getId());
-        assertDoesNotThrow(() -> UUID.fromString(response.getId()));
-    }
-
-    @Test
-    void shouldGenerateDifferentIdForEachContact() {
-        givenSaveReturnsSameEntity();
-        User user = authenticatedUser();
-
-        ContactResponse first = contactService.create(user, fullRequest());
-        ContactResponse second = contactService.create(user, fullRequest());
-
-        assertNotEquals(first.getId(), second.getId());
+        assertEquals(captureSavedContact().getId(), response.getId());
     }
 
     @Test
     void shouldAssignAuthenticatedUserToContactWhenContactIsCreated() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
         User user = authenticatedUser();
 
         contactService.create(user, fullRequest());
@@ -98,7 +85,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldMapAllRequestFieldsToEntityBeforeSaving() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
 
         contactService.create(authenticatedUser(), fullRequest());
 
@@ -111,7 +98,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldSaveContactWithNullOptionalFieldsWhenOnlyFirstNameIsProvided() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
         CreateContactRequest request = CreateContactRequest.builder().firstName("Eko").build();
 
         ContactResponse response = contactService.create(authenticatedUser(), request);
@@ -129,7 +116,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldCallRepositorySaveExactlyOnceWhenContactIsCreated() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
 
         contactService.create(authenticatedUser(), fullRequest());
 
@@ -138,7 +125,7 @@ class ContactServiceImplTest {
 
     @Test
     void shouldNotModifyAuthenticatedUserWhenContactIsCreated() {
-        givenSaveReturnsSameEntity();
+        givenSaveAssignsGeneratedId();
         User user = authenticatedUser();
 
         contactService.create(user, fullRequest());
@@ -162,10 +149,13 @@ class ContactServiceImplTest {
 
     // ------------------------------------------------------------ helpers
 
-    /** Makes the mocked repository behave like a real one: it returns the entity it was given. */
-    private void givenSaveReturnsSameEntity() {
-        when(contactRepository.save(any(Contact.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+    /** Simulates the repository: assigns an id like GenerationType.UUID does on persist. */
+    private void givenSaveAssignsGeneratedId() {
+        when(contactRepository.save(any(Contact.class))).thenAnswer(invocation -> {
+            Contact contact = invocation.getArgument(0);
+            contact.setId(UUID.randomUUID().toString());
+            return contact;
+        });
     }
 
     /** Captures the entity passed to {@code contactRepository.save(...)}. */

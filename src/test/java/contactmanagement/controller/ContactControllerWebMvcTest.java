@@ -9,6 +9,7 @@ import contactmanagement.service.ContactService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -55,6 +56,18 @@ class ContactControllerWebMvcTest {
     private UserRepository userRepository;
 
     // ------------------------------------------------------------ success
+
+    @ParameterizedTest
+    @ValueSource(strings = {"081234567890", "6281234567890", "+6281234567890"})
+    void shouldReturnOkWhenPhoneFormatIsValid(String phone) {
+        User user = givenAuthenticatedUser();
+        CreateContactRequest request = CreateContactRequest.builder()
+                .firstName("Yoga").phone(phone).build();
+        when(contactService.create(user, request)).thenReturn(
+                ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").phone(phone).build());
+
+        postContact(TOKEN, request).expectStatus().isOk();
+    }
 
     @Test
     void shouldReturnCreatedContactWhenRequestIsValid() {
@@ -291,7 +304,11 @@ class ContactControllerWebMvcTest {
                 CreateContactRequest.builder().firstName("Eko").email("not-an-email").build(),
                 CreateContactRequest.builder().firstName("Eko").email("eko@").build(),
                 CreateContactRequest.builder().firstName("Eko").email("a".repeat(195) + "@x.com").build(),
-                CreateContactRequest.builder().firstName("Eko").phone(tooLong).build()
+                CreateContactRequest.builder().firstName("Eko").phone(tooLong).build(),
+                CreateContactRequest.builder().firstName("Yoga").phone("abc").build(),
+                CreateContactRequest.builder().firstName("Yoga").phone("0812345").build(),
+                CreateContactRequest.builder().firstName("Yoga").phone("081" + "2".repeat(11)).build(),
+                CreateContactRequest.builder().firstName("Yoga").phone("0812-3456-7890").build()
         );
     }
 

@@ -23,10 +23,10 @@ public class CreateContactRequest {
     private String lastName;
 
     @Email
-    @Size(max = 100)
+    @Size(max = 200)
     private String email;
 
-    @Pattern(regexp = "^(\\+62|62|0)8[1-9][0-9]{7,10}$")
-    @Size(max = 20)
+    @Pattern(regexp = "^(\\+62|62|0)8[1-9][0-9]{7,10}$",
+            message = "must be a valid Indonesian mobile number")
     private String phone;
 }
