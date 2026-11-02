@@ -13,7 +13,8 @@ endpoint and centralized error handling.
 | User    | Get current user profile            | Done    |
 | User    | Update current user profile         | Done    |
 | User    | Logout                              | Done    |
-| Contact | Create, update, get, search, delete | Planned |
+| Contact | Create contact                      | Done    |
+| Contact | Update, get, search, delete         | Planned |
 | Address | Create, update, get, list, delete   | Planned |
 
 ## Tech Stack
@@ -23,6 +24,7 @@ endpoint and centralized error handling.
 | Language    | Java 25                                                        |
 | Framework   | Spring Boot 4.1.1 (Spring Web MVC)                             |
 | Persistence | Spring Data JPA (Hibernate), HikariCP, MySQL                   |
+| Migration   | Flyway (`spring-boot-starter-flyway`, `flyway-mysql`)          |
 | Validation  | Jakarta Bean Validation                                        |
 | Security    | `spring-security-crypto` (BCrypt hashing, no filter chain)     |
 | Utilities   | Lombok, SLF4J                                                  |
@@ -48,23 +50,16 @@ cd contact-management-java
 
 ### 2. Create the database
 
-Hibernate does not manage the schema (`spring.jpa.hibernate.ddl-auto` is not set), so create it
-manually:
+Flyway creates the tables on startup, but it cannot create the database itself. Create an empty
+schema once:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS contact_management CHARACTER SET utf8mb4;
-USE contact_management;
-
-CREATE TABLE users (
-                       username         VARCHAR(100) NOT NULL,
-                       password         VARCHAR(100) NOT NULL,
-                       name             VARCHAR(100) NOT NULL,
-                       token            VARCHAR(100),
-                       token_expired_at BIGINT,
-                       PRIMARY KEY (username),
-                       CONSTRAINT unique_token UNIQUE (token)
-) ENGINE = InnoDB;
 ```
+
+The tables (`users`, `contacts`) are created by the migration
+`src/main/resources/db/migration/V1__create_users_and_contacts.sql`. Hibernate only validates the
+schema (`spring.jpa.hibernate.ddl-auto=validate`) and never changes it.
 
 ### 3. Configure the application
 
@@ -124,8 +119,13 @@ curl -X PATCH http://localhost:8080/api/users/current \
   -H "Content-Type: application/json" -H "Accept: application/json" \
   -H "X-API-TOKEN: <token>" \
   -d '{"name":"John Doe Updated"}'
-  
-  
+
+# Create a contact
+curl -X POST http://localhost:8080/api/contacts \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "X-API-TOKEN: <token>" \
+  -d '{"firstName":"Eko","lastName":"Khannedy","email":"eko@example.com","phone":"081234567890"}'
+
 # Logout (invalidates the token)
 curl -X DELETE http://localhost:8080/api/auth/logout \
   -H "Accept: application/json" -H "X-API-TOKEN: <token>"
@@ -150,13 +150,14 @@ Protected endpoints require the `X-API-TOKEN` header with the token returned by 
 
 ### Endpoint summary
 
-| Method   | URL                  | Auth  | Description                            |
-|----------|----------------------|-------|----------------------------------------|
-| `POST`   | `/api/users`         | No    | Register a new user                    |
-| `POST`   | `/api/auth/login`    | No    | Log in and receive a token             |
-| `GET`    | `/api/users/current` | Token | Get the current user profile           |
-| `PATCH`  | `/api/users/current` | Token | Update the current user                |
+| Method   | URL                  | Auth  | Description                              |
+|----------|----------------------|-------|------------------------------------------|
+| `POST`   | `/api/users`         | No    | Register a new user                      |
+| `POST`   | `/api/auth/login`    | No    | Log in and receive a token               |
+| `GET`    | `/api/users/current` | Token | Get the current user profile             |
+| `PATCH`  | `/api/users/current` | Token | Update the current user                  |
 | `DELETE` | `/api/auth/logout`   | Token | Log out and invalidate the current token |
+| `POST`   | `/api/contacts`      | Token | Create a contact for the current user    |
 
 ### Register User
 
@@ -256,12 +257,12 @@ Request body. Every field is optional, and an omitted field keeps its current va
 
 Responses:
 
-| Status | Condition                                      | Body                                                      |
-|--------|------------------------------------------------|-----------------------------------------------------------|
-| 200    | Profile updated                                | `{"data":{"username":"johndoe","name":"John Doe Updated"}}` |
-| 400    | Validation failed (for example short password) | `{"errors":"password size must be between 8 and 100"}`    |
-| 400    | Missing or malformed JSON body                 | `{"errors":"Malformed or missing request body"}`          |
-| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}`                     |
+| Status | Condition                                                | Body                                                        |
+|--------|----------------------------------------------------------|-------------------------------------------------------------|
+| 200    | Profile updated                                          | `{"data":{"username":"johndoe","name":"John Doe Updated"}}` |
+| 400    | Validation failed (for example short password)           | `{"errors":"password size must be between 8 and 100"}`      |
+| 400    | Missing or malformed JSON body                           | `{"errors":"Malformed or missing request body"}`            |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}`                                 |
 
 Authentication is checked before the body is validated, so a request without a valid token
 always returns 401, even when the body is also invalid. The username and the token are never
@@ -290,27 +291,79 @@ Logout clears the token and its expiry time of the current user. The old token i
 from then on, so a second logout with the same token returns 401. Other users are not
 affected, and the user can log in again to receive a new token.
 
+### Create Contact
+
+`POST /api/contacts` (requires `X-API-TOKEN`)
+
+Headers:
+
+| Header         | Description                          |
+|----------------|--------------------------------------|
+| `X-API-TOKEN`  | Token returned by the login endpoint |
+| `Content-Type` | `application/json`                   |
+| `Accept`       | `application/json`                   |
+
+Request body:
+
+| Field       | Type   | Rules                                                                                   |
+|-------------|--------|-----------------------------------------------------------------------------------------|
+| `firstName` | string | Required, not blank, max 100 chars                                                      |
+| `lastName`  | string | Optional, max 100 chars                                                                 |
+| `email`     | string | Optional, valid email format, max 200 chars                                             |
+| `phone`     | string | Optional, Indonesian mobile number (`+62`, `62`, or `0` prefix, then `8`), no separators |
+
+```json
+{
+  "firstName": "Eko",
+  "lastName": "Khannedy",
+  "email": "eko@example.com",
+  "phone": "081234567890"
+}
+```
+
+Responses:
+
+| Status | Condition                                                | Body                                                                                                                                      |
+|--------|----------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| 200    | Contact created                                          | `{"data":{"id":"1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d","firstName":"Eko","lastName":"Khannedy","email":"eko@example.com","phone":"081234567890"}}` |
+| 400    | Validation failed                                        | `{"errors":"firstName must not be blank"}`                                                                                                |
+| 400    | Invalid phone number                                     | `{"errors":"phone must be a valid Indonesian mobile number"}`                                                                             |
+| 400    | Missing or malformed JSON body                           | `{"errors":"Malformed or missing request body"}`                                                                                          |
+| 401    | Header missing or blank, token unknown, or token expired | `{"errors":"Unauthorized"}`                                                                                                               |
+
+The contact always belongs to the owner of the token; the owner cannot be set in the body. The
+`id` is a UUID generated by the server. Authentication is checked before the body is validated,
+so an invalid token returns 401 even when the body is also invalid.
+
 ## Testing
 
 ```bash
 mvn test
 ```
 
-| Test class                 | Type                                                                  | Needs MySQL |
-|----------------------------|-----------------------------------------------------------------------|-------------|
-| `UserControllerTest`       | `@SpringBootTest` integration (register, get and update current user) | Yes         |
-| `AuthControllerTest`       | `@SpringBootTest` integration (login and logout)                      | Yes         |
-| `UserControllerWebMvcTest` | `@WebMvcTest`, service and repository mocked (get and update)         | No          |
-| `AuthControllerWebMvcTest` | `@WebMvcTest`, `AuthService` and `UserRepository` mocked              | No          |
-| `UserServiceImplTest`      | Mockito unit test (get and update current user)                       | No          |
-| `AuthServiceImplTest`      | Mockito unit test (login and logout)                                  | No          |
-| `UserArgumentResolverTest` | Mockito unit test                                                     | No          |
+| Test class                   | Type                                                                  | Needs MySQL |
+|------------------------------|-----------------------------------------------------------------------|-------------|
+| `UserControllerTest`         | `@SpringBootTest` integration (register, get and update current user) | Yes         |
+| `AuthControllerTest`         | `@SpringBootTest` integration (login and logout)                      | Yes         |
+| `ContactControllerTest`      | `@SpringBootTest` integration (create contact)                        | Yes         |
+| `UserControllerWebMvcTest`   | `@WebMvcTest`, service and repository mocked (get and update)         | No          |
+| `AuthControllerWebMvcTest`   | `@WebMvcTest`, `AuthService` and `UserRepository` mocked              | No          |
+| `ContactControllerWebMvcTest`| `@WebMvcTest`, `ContactService` and `UserRepository` mocked           | No          |
+| `UserServiceImplTest`        | Mockito unit test (get and update current user)                       | No          |
+| `AuthServiceImplTest`        | Mockito unit test (login and logout)                                  | No          |
+| `ContactServiceImplTest`     | Mockito unit test (create contact)                                    | No          |
+| `UserArgumentResolverTest`   | Mockito unit test                                                     | No          |
 
-The integration tests use the datasource from `application.properties` and delete all rows in
-`users`. Point them to a dedicated test database. To run only the tests that need no database:
+Tests use their own configuration in `src/test/resources/application.properties`, which points
+to a separate schema, `contact_management_test` (created automatically and migrated by Flyway).
+The integration tests delete all rows in `contacts` and `users`, but never touch the main
+schema. The test datasource can be changed with `TEST_DATABASE_URL`, `TEST_DATABASE_USERNAME`,
+and `TEST_DATABASE_PASSWORD`.
+
+To run only the tests that need no database:
 
 ```bash
-mvn test -Dtest='UserControllerWebMvcTest*,AuthControllerWebMvcTest,AuthServiceImplTest,UserServiceImplTest,UserArgumentResolverTest'
+mvn test -Dtest='*WebMvcTest,*ServiceImplTest,UserArgumentResolverTest'
 ```
 
 ## Project Structure
@@ -327,12 +380,16 @@ contact-management-java
     │   │   │   └── WebConfiguration.java
     │   │   ├── controller
     │   │   │   ├── AuthController.java
+    │   │   │   ├── ContactController.java
     │   │   │   └── UserController.java
     │   │   ├── entity
+    │   │   │   ├── Contact.java
     │   │   │   └── User.java
     │   │   ├── exception
     │   │   │   └── GlobalExceptionHandler.java
     │   │   ├── model
+    │   │   │   ├── ContactResponse.java
+    │   │   │   ├── CreateContactRequest.java
     │   │   │   ├── LoginResponse.java
     │   │   │   ├── LoginUserRequest.java
     │   │   │   ├── RegisterUserRequest.java
@@ -340,27 +397,38 @@ contact-management-java
     │   │   │   ├── UserResponse.java
     │   │   │   └── WebResponse.java
     │   │   ├── repository
+    │   │   │   ├── ContactRepository.java
     │   │   │   └── UserRepository.java
     │   │   ├── resolver
     │   │   │   └── UserArgumentResolver.java
     │   │   └── service
     │   │       ├── AuthService.java
     │   │       ├── AuthServiceImpl.java
+    │   │       ├── ContactService.java
+    │   │       ├── ContactServiceImpl.java
     │   │       ├── UserService.java
     │   │       └── UserServiceImpl.java
     │   └── resources
-    │       └── application.properties
-    └── test/java/contactmanagement
-        ├── controller
-        │   ├── AuthControllerTest.java
-        │   ├── AuthControllerWebMvcTest.java
-        │   ├── UserControllerTest.java
-        │   └── UserControllerWebMvcTest.java
-        ├── resolver
-        │   └── UserArgumentResolverTest.java
-        └── service
-            ├── AuthServiceImplTest.java
-            └── UserServiceImplTest.java
+    │       ├── application.properties
+    │       └── db/migration
+    │           └── V1__create_users_and_contacts.sql
+    └── test
+        ├── java/contactmanagement
+        │   ├── controller
+        │   │   ├── AuthControllerTest.java
+        │   │   ├── AuthControllerWebMvcTest.java
+        │   │   ├── ContactControllerTest.java
+        │   │   ├── ContactControllerWebMvcTest.java
+        │   │   ├── UserControllerTest.java
+        │   │   └── UserControllerWebMvcTest.java
+        │   ├── resolver
+        │   │   └── UserArgumentResolverTest.java
+        │   └── service
+        │       ├── AuthServiceImplTest.java
+        │       ├── ContactServiceImplTest.java
+        │       └── UserServiceImplTest.java
+        └── resources
+            └── application.properties
 ```
 
 ## Architecture and Conventions
@@ -372,18 +440,22 @@ contact-management-java
 - **Authentication:** `UserArgumentResolver` reads the `X-API-TOKEN` header and injects the
   current `User` into controller methods that declare a `User` parameter. An endpoint is
   protected only if it declares that parameter.
+- **Ownership:** a contact's owner always comes from the authenticated user, never from the
+  request body.
 - **Errors:** services and the resolver throw `ResponseStatusException`;
   `GlobalExceptionHandler` converts every error into the standard envelope.
 - **Validation:** `@Valid @RequestBody` on controllers, Bean Validation annotations on DTOs.
-- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, and tokens are never
-  logged.
+- **Schema:** managed by Flyway migrations in `src/main/resources/db/migration`; Hibernate only
+  validates it.
+- **Logging:** SLF4J with `key=value` parameters. Passwords, hashes, tokens, and contact
+  personal data (name, email, phone) are never logged.
 
 ## Current Limitations
 
-- The schema is created manually; there is no migration tool yet.
 - No rate limiting or brute-force protection on registration and login.
 - Tokens are stored in plain text in `users.token`.
 - Changing the password does not revoke the active token.
 - `application.properties` contains local-development fallbacks for the database credentials;
   remove them before any real deployment.
-- Contact and address endpoints are specified but not implemented yet.
+- Only create contact is implemented; update, get, search, and delete contact, and all address
+  endpoints, are specified but not implemented yet.
