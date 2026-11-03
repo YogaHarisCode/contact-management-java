@@ -23,11 +23,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for {@code POST /api/contacts}.
@@ -235,6 +231,124 @@ class ContactControllerTest {
         );
     }
 
+    // ====================================================== GET CONTACT
+
+    @Test
+    void shouldReturnContactWhenContactBelongsToAuthenticatedUser() {
+        Contact contact = saveContact(USERNAME, "Yoga", "Harisistianugroho", "yoga@example.com", "081234567890");
+
+        WebResponse<ContactResponse> response = getContactOk(VALID_TOKEN, contact.getId());
+
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(contact.getId(), response.getData().getId());
+        assertEquals("Yoga", response.getData().getFirstName());
+        assertEquals("Harisistianugroho", response.getData().getLastName());
+        assertEquals("yoga@example.com", response.getData().getEmail());
+        assertEquals("081234567890", response.getData().getPhone());
+    }
+
+    @Test
+    void shouldReturnRequestedContactWhenUserHasMultipleContacts() {
+        saveContact(USERNAME, "First", null, null, null);
+        Contact second = saveContact(USERNAME, "Second", null, null, null);
+
+        WebResponse<ContactResponse> response = getContactOk(VALID_TOKEN, second.getId());
+
+        assertEquals(second.getId(), response.getData().getId());
+        assertEquals("Second", response.getData().getFirstName());
+    }
+
+    @Test
+    void shouldOmitNullOptionalFieldsWhenStoredContactHasOnlyFirstName() {
+        Contact contact = saveContact(USERNAME, "Yoga", null, null, null);
+
+        String rawBody = getContact(VALID_TOKEN, contact.getId())
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertFalse(rawBody.contains("lastName"));
+        assertFalse(rawBody.contains("email"));
+        assertFalse(rawBody.contains("phone"));
+    }
+
+    @Test
+    void shouldNotExposeOwnerDataWhenGettingContact() {
+        Contact contact = saveContact(USERNAME, "Yoga", null, null, null);
+
+        String rawBody = getContact(VALID_TOKEN, contact.getId())
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertFalse(rawBody.contains(USERNAME));
+        assertFalse(rawBody.contains("password"));
+        assertFalse(rawBody.contains("bcrypt-hash"));
+        assertFalse(rawBody.contains(VALID_TOKEN));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenContactIdDoesNotExist() {
+        assertNotFound(getContact(VALID_TOKEN, UUID.randomUUID().toString()));
+    }
+
+    /** IDOR (Insecure Direct Object Reference): a valid id owned by someone else must look like "not found". */
+    @Test
+    void shouldReturnNotFoundWhenContactBelongsToAnotherUser() {
+        saveUser(OTHER_USERNAME, "Jane Doe", OTHER_TOKEN, futureExpiry());
+        Contact othersContact = saveContact(OTHER_USERNAME, "Secret", "Contact", "secret@example.com", "081234567890");
+
+        WebResponse<ContactResponse> response = assertNotFound(getContact(VALID_TOKEN, othersContact.getId()));
+
+        assertNull(response.getData());
+        // The owner can still read it, so the 404 above is about ownership and not a missing row.
+        assertEquals("Secret", getContactOk(OTHER_TOKEN, othersContact.getId()).getData().getFirstName());
+    }
+
+    @Test
+    void shouldNotModifyContactWhenGettingContact() {
+        Contact contact = saveContact(USERNAME, "Yoga", "Harisistianugroho", "yoga@example.com", "081234567890");
+
+        getContactOk(VALID_TOKEN, contact.getId());
+
+        Contact unchanged = contactRepository.findById(contact.getId()).orElseThrow();
+        assertEquals("Yoga", unchanged.getFirstName());
+        assertEquals("Harisistianugroho", unchanged.getLastName());
+        assertEquals("yoga@example.com", unchanged.getEmail());
+        assertEquals("081234567890", unchanged.getPhone());
+        assertEquals(1, contactRepository.count());
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenHeaderIsMissing() {
+        Contact contact = saveContact(USERNAME, "Yoga", null, null, null);
+
+        assertUnauthorized(getContact(null, contact.getId()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "unknown-token"})
+    void shouldReturnUnauthorizedWhenGetContactTokenIsEmptyOrUnknown(String token) {
+        Contact contact = saveContact(USERNAME, "Yoga", null, null, null);
+
+        assertUnauthorized(getContact(token, contact.getId()));
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenIsExpired() {
+        Contact contact = saveContact(USERNAME, "Yoga", null, null, null);
+        User user = userRepository.findById(USERNAME).orElseThrow();
+        user.setTokenExpiredAt(System.currentTimeMillis() - 1_000L);
+        userRepository.save(user);
+
+        assertUnauthorized(getContact(VALID_TOKEN, contact.getId()));
+    }
+
     // ------------------------------------------------------------ helpers
 
     /** Sends POST /api/contacts; the token header is omitted when {@code token} is null. */
@@ -296,5 +410,55 @@ class ContactControllerTest {
 
     private static long futureExpiry() {
         return System.currentTimeMillis() + 60_000L;
+    }
+
+    /** Sends GET /api/contacts/{contactId}; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec getContact(String token, String contactId) {
+        return client.get()
+                .uri(CONTACTS_URI + "/{contactId}", contactId)
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .exchange();
+    }
+
+    /** Sends GET, asserts HTTP 200, and returns the parsed response. */
+    private WebResponse<ContactResponse> getContactOk(String token, String contactId) {
+        return getContact(token, contactId)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+    }
+
+    /** Asserts HTTP 404 with the standard error body and returns the parsed response. */
+    private WebResponse<ContactResponse> assertNotFound(RestTestClient.ResponseSpec spec) {
+        WebResponse<ContactResponse> response = spec
+                .expectStatus().isNotFound()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Contact is not found", response.getErrors());
+        return response;
+    }
+
+    /** Persists a contact owned by an existing user and returns it with its generated id. */
+    private Contact saveContact(String ownerUsername, String firstName, String lastName,
+                                String email, String phone) {
+        Contact contact = new Contact();
+        contact.setFirstName(firstName);
+        contact.setLastName(lastName);
+        contact.setEmail(email);
+        contact.setPhone(phone);
+        contact.setUser(userRepository.findById(ownerUsername).orElseThrow());
+        return contactRepository.save(contact);
     }
 }

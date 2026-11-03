@@ -6,6 +6,7 @@ import contactmanagement.model.CreateContactRequest;
 import contactmanagement.model.WebResponse;
 import contactmanagement.repository.UserRepository;
 import contactmanagement.service.ContactService;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -14,9 +15,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -36,6 +39,7 @@ import static org.mockito.Mockito.when;
  * <p>Runs the real {@link ContactController}, argument resolver, and exception handler, with
  * {@link ContactService} and {@link UserRepository} mocked, so no database is needed.
  */
+@Slf4j
 @WebMvcTest(ContactController.class)
 @AutoConfigureRestTestClient
 class ContactControllerWebMvcTest {
@@ -105,9 +109,9 @@ class ContactControllerWebMvcTest {
     @Test
     void shouldReturnOkWhenOnlyFirstNameIsProvided() {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = CreateContactRequest.builder().firstName("Eko").build();
+        CreateContactRequest request = CreateContactRequest.builder().firstName("Yoga").build();
         when(contactService.create(user, request)).thenReturn(
-                ContactResponse.builder().id(CONTACT_ID).firstName("Eko").build());
+                ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").build());
 
         WebResponse<ContactResponse> response = postContact(TOKEN, request)
                 .expectStatus().isOk()
@@ -117,7 +121,7 @@ class ContactControllerWebMvcTest {
                 .getResponseBody();
 
         assertNotNull(response);
-        assertEquals("Eko", response.getData().getFirstName());
+        assertEquals("Yoga", response.getData().getFirstName());
         verify(contactService).create(user, request);
     }
 
@@ -244,7 +248,7 @@ class ContactControllerWebMvcTest {
         givenAuthenticatedUser();
 
         WebResponse<ContactResponse> response = postContact(TOKEN,
-                CreateContactRequest.builder().firstName("Eko").email("not-an-email").build())
+                CreateContactRequest.builder().firstName("Yoga").email("not-an-email").build())
                 .expectStatus().isBadRequest()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
                 })
@@ -300,16 +304,138 @@ class ContactControllerWebMvcTest {
                 CreateContactRequest.builder().firstName("").build(),
                 CreateContactRequest.builder().firstName("   ").build(),
                 CreateContactRequest.builder().firstName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Eko").lastName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Eko").email("not-an-email").build(),
-                CreateContactRequest.builder().firstName("Eko").email("eko@").build(),
-                CreateContactRequest.builder().firstName("Eko").email("a".repeat(195) + "@x.com").build(),
-                CreateContactRequest.builder().firstName("Eko").phone(tooLong).build(),
+                CreateContactRequest.builder().firstName("Yoga").lastName(tooLong).build(),
+                CreateContactRequest.builder().firstName("Yoga").email("not-an-email").build(),
+                CreateContactRequest.builder().firstName("Yoga").email("yoga@").build(),
+                CreateContactRequest.builder().firstName("Yoga").email("a".repeat(195) + "@x.com").build(),
+                CreateContactRequest.builder().firstName("Yoga").phone(tooLong).build(),
                 CreateContactRequest.builder().firstName("Yoga").phone("abc").build(),
                 CreateContactRequest.builder().firstName("Yoga").phone("0812345").build(),
                 CreateContactRequest.builder().firstName("Yoga").phone("081" + "2".repeat(11)).build(),
                 CreateContactRequest.builder().firstName("Yoga").phone("0812-3456-7890").build()
         );
+    }
+
+    // ====================================================== GET CONTACT
+
+    @Test
+    void shouldReturnContactWhenTokenIsValidAndContactExists() {
+        User user = givenAuthenticatedUser();
+        when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
+
+        WebResponse<ContactResponse> response = getContact(TOKEN, CONTACT_ID)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(CONTACT_ID, response.getData().getId());
+        assertEquals("Yoga", response.getData().getFirstName());
+        assertEquals("Harisistianugroho", response.getData().getLastName());
+        assertEquals("yoga@example.com", response.getData().getEmail());
+        assertEquals("081234567890", response.getData().getPhone());
+    }
+
+    @Test
+    void shouldPassAuthenticatedUserAndContactIdToServiceWhenGettingContact() {
+        User user = givenAuthenticatedUser();
+        when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
+
+        getContact(TOKEN, CONTACT_ID).expectStatus().isOk();
+
+        verify(contactService).get(user, CONTACT_ID);
+    }
+
+    @Test
+    void shouldOmitNullOptionalFieldsWhenGettingContactWithOnlyFirstName() {
+        User user = givenAuthenticatedUser();
+        when(contactService.get(user, CONTACT_ID)).thenReturn(
+                ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").build());
+
+        String rawBody = getContact(TOKEN, CONTACT_ID)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertTrue(rawBody.contains("firstName"));
+        assertFalse(rawBody.contains("lastName"));
+        assertFalse(rawBody.contains("email"));
+        assertFalse(rawBody.contains("phone"));
+    }
+
+    @Test
+    void shouldNotExposeTokenOrPasswordWhenGettingContact() {
+        User user = givenAuthenticatedUser();
+        when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
+
+        String rawBody = getContact(TOKEN, CONTACT_ID)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertFalse(rawBody.contains("password"));
+        assertFalse(rawBody.contains("bcrypt-hash"));
+        assertFalse(rawBody.contains("token"));
+        assertFalse(rawBody.contains(TOKEN));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenServiceCannotFindContact() {
+        User user = givenAuthenticatedUser();
+        when(contactService.get(user, CONTACT_ID))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Contact is not found"));
+
+        WebResponse<ContactResponse> response = getContact(TOKEN, CONTACT_ID)
+                .expectStatus().isNotFound()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Contact is not found", response.getErrors());
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenHeaderIsMissing() {
+        assertUnauthorized(getContact(null, CONTACT_ID));
+
+        verifyNoInteractions(userRepository, contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenHeaderIsEmpty() {
+        assertUnauthorized(getContact("", CONTACT_ID));
+
+        verifyNoInteractions(userRepository, contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenIsNotFound() {
+        when(userRepository.findFirstByToken("unknown-token")).thenReturn(Optional.empty());
+
+        assertUnauthorized(getContact("unknown-token", CONTACT_ID));
+
+        verifyNoInteractions(contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenGetContactTokenIsExpired() {
+        User expired = validUser();
+        expired.setTokenExpiredAt(System.currentTimeMillis() - 1_000L);
+        when(userRepository.findFirstByToken(TOKEN)).thenReturn(Optional.of(expired));
+
+        assertUnauthorized(getContact(TOKEN, CONTACT_ID));
+
+        verifyNoInteractions(contactService);
     }
 
     // ------------------------------------------------------------ helpers
@@ -376,5 +502,18 @@ class ContactControllerWebMvcTest {
         user.setToken(TOKEN);
         user.setTokenExpiredAt(System.currentTimeMillis() + 60_000L);
         return user;
+    }
+
+    /** Sends GET /api/contacts/{contactId}; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec getContact(String token, String contactId) {
+        return client.get()
+                .uri(CONTACTS_URI + "/{contactId}", contactId)
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .exchange();
     }
 }
