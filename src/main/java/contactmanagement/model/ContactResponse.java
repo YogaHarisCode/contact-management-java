@@ -1,5 +1,6 @@
 package contactmanagement.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,12 +11,13 @@ import lombok.NoArgsConstructor;
  * {@link WebResponse}.
  *
  * <p>Deliberately contains no owner information, so no data of the {@link contactmanagement.entity.User}
- * can leak through a contact response.
+ * can leak through a contact response. Fields that are {@code null} are omitted from the JSON.
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ContactResponse {
 
     /** Unique identifier (UUID string) of the contact. */

@@ -7,8 +7,10 @@ import contactmanagement.model.CreateContactRequest;
 import contactmanagement.repository.ContactRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Default {@link ContactService} implementation backed by Spring Data JPA.
@@ -18,8 +20,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ContactServiceImpl implements ContactService{
 
-    /** Repository used to persist contacts. */
+    /** Repository used to persist and load contacts. */
     private final ContactRepository contactRepository;
+
+    /** Error message returned when a contact does not exist or belongs to another user. */
+    private static final String CONTACT_NOT_FOUND = "Contact is not found";
 
     /**
      * {@inheritDoc}
@@ -48,6 +53,32 @@ public class ContactServiceImpl implements ContactService{
         // Only identifiers are logged; name, email, and phone are personal data (PII).
         log.info("Contact created: contactId={}, username={}", saved.getId(), username);
         return toContactResponse(saved);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The lookup is a single query on owner and id. It runs in a read-only transaction and
+     * changes nothing. Reads are logged at DEBUG only; a rejected lookup is logged at WARN with
+     * identifiers only, never with personal data.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ContactResponse get(User user, String contactId) {
+        String username = user.getUsername();
+        log.debug("Get contact started: contactId={}, username={}", contactId, username);
+
+        // Matching owner and id together is the IDOR guard: another user's id yields "not found".
+        Contact contact = contactRepository.findByUserAndId(user, contactId)
+                .orElseThrow(() -> {
+                    // WARN because repeated misses can indicate someone guessing contact ids.
+                    log.warn("Get contact rejected, contact not found: contactId={}, username={}",
+                            contactId, username);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND);
+                });
+
+        log.debug("Contact retrieved: contactId={}, username={}", contactId, username);
+        return toContactResponse(contact);
     }
 
     /**
