@@ -57,9 +57,17 @@ public class ContactServiceImpl implements ContactService{
     @Override
     @Transactional(readOnly = true)
     public ContactResponse get(User user, String contactId) {
-        Contact contact = contactRepository.findByUserAndId(user, contactId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND));
+        String username = user.getUsername();
+        log.debug("Get contact started: contactId={}, username={}", contactId, username);
 
+        Contact contact = contactRepository.findByUserAndId(user, contactId)
+                .orElseThrow(() -> {
+                    log.warn("Get contact rejected, contact not found: contactId={}, username={}",
+                            contactId, username);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND);
+                });
+
+        log.debug("Contact retrieved: contactId={}, username={}", contactId, username);
         return toContactResponse(contact);
     }
 

@@ -6,7 +6,6 @@ import contactmanagement.model.CreateContactRequest;
 import contactmanagement.model.WebResponse;
 import contactmanagement.repository.UserRepository;
 import contactmanagement.service.ContactService;
-import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -39,7 +38,6 @@ import static org.mockito.Mockito.when;
  * <p>Runs the real {@link ContactController}, argument resolver, and exception handler, with
  * {@link ContactService} and {@link UserRepository} mocked, so no database is needed.
  */
-@Slf4j
 @WebMvcTest(ContactController.class)
 @AutoConfigureRestTestClient
 class ContactControllerWebMvcTest {
@@ -323,7 +321,7 @@ class ContactControllerWebMvcTest {
         User user = givenAuthenticatedUser();
         when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
 
-        WebResponse<ContactResponse> response = getContact(TOKEN, CONTACT_ID)
+        WebResponse<ContactResponse> response = getContact(TOKEN)
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
                 })
@@ -344,7 +342,7 @@ class ContactControllerWebMvcTest {
         User user = givenAuthenticatedUser();
         when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
 
-        getContact(TOKEN, CONTACT_ID).expectStatus().isOk();
+        getContact(TOKEN).expectStatus().isOk();
 
         verify(contactService).get(user, CONTACT_ID);
     }
@@ -355,7 +353,7 @@ class ContactControllerWebMvcTest {
         when(contactService.get(user, CONTACT_ID)).thenReturn(
                 ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").build());
 
-        String rawBody = getContact(TOKEN, CONTACT_ID)
+        String rawBody = getContact(TOKEN)
                 .expectStatus().isOk()
                 .expectBody(String.class)
                 .returnResult()
@@ -373,7 +371,7 @@ class ContactControllerWebMvcTest {
         User user = givenAuthenticatedUser();
         when(contactService.get(user, CONTACT_ID)).thenReturn(fullResponse());
 
-        String rawBody = getContact(TOKEN, CONTACT_ID)
+        String rawBody = getContact(TOKEN)
                 .expectStatus().isOk()
                 .expectBody(String.class)
                 .returnResult()
@@ -392,7 +390,7 @@ class ContactControllerWebMvcTest {
         when(contactService.get(user, CONTACT_ID))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Contact is not found"));
 
-        WebResponse<ContactResponse> response = getContact(TOKEN, CONTACT_ID)
+        WebResponse<ContactResponse> response = getContact(TOKEN)
                 .expectStatus().isNotFound()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
                 })
@@ -406,14 +404,14 @@ class ContactControllerWebMvcTest {
 
     @Test
     void shouldReturnUnauthorizedWhenGetContactTokenHeaderIsMissing() {
-        assertUnauthorized(getContact(null, CONTACT_ID));
+        assertUnauthorized(getContact(null));
 
         verifyNoInteractions(userRepository, contactService);
     }
 
     @Test
     void shouldReturnUnauthorizedWhenGetContactTokenHeaderIsEmpty() {
-        assertUnauthorized(getContact("", CONTACT_ID));
+        assertUnauthorized(getContact(""));
 
         verifyNoInteractions(userRepository, contactService);
     }
@@ -422,7 +420,7 @@ class ContactControllerWebMvcTest {
     void shouldReturnUnauthorizedWhenGetContactTokenIsNotFound() {
         when(userRepository.findFirstByToken("unknown-token")).thenReturn(Optional.empty());
 
-        assertUnauthorized(getContact("unknown-token", CONTACT_ID));
+        assertUnauthorized(getContact("unknown-token"));
 
         verifyNoInteractions(contactService);
     }
@@ -433,7 +431,7 @@ class ContactControllerWebMvcTest {
         expired.setTokenExpiredAt(System.currentTimeMillis() - 1_000L);
         when(userRepository.findFirstByToken(TOKEN)).thenReturn(Optional.of(expired));
 
-        assertUnauthorized(getContact(TOKEN, CONTACT_ID));
+        assertUnauthorized(getContact(TOKEN));
 
         verifyNoInteractions(contactService);
     }
@@ -505,9 +503,9 @@ class ContactControllerWebMvcTest {
     }
 
     /** Sends GET /api/contacts/{contactId}; the token header is omitted when {@code token} is null. */
-    private RestTestClient.ResponseSpec getContact(String token, String contactId) {
+    private RestTestClient.ResponseSpec getContact(String token) {
         return client.get()
-                .uri(CONTACTS_URI + "/{contactId}", contactId)
+                .uri(CONTACTS_URI + "/{contactId}", ContactControllerWebMvcTest.CONTACT_ID)
                 .accept(MediaType.APPLICATION_JSON)
                 .headers(headers -> {
                     if (token != null) {
