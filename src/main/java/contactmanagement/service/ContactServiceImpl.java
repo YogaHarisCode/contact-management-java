@@ -7,8 +7,10 @@ import contactmanagement.model.CreateContactRequest;
 import contactmanagement.repository.ContactRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Default {@link ContactService} implementation backed by Spring Data JPA.
@@ -20,6 +22,8 @@ public class ContactServiceImpl implements ContactService{
 
     /** Repository used to persist contacts. */
     private final ContactRepository contactRepository;
+
+    private static final String CONTACT_NOT_FOUND = "Contact is not found";
 
     /**
      * {@inheritDoc}
@@ -48,6 +52,15 @@ public class ContactServiceImpl implements ContactService{
         // Only identifiers are logged; name, email, and phone are personal data (PII).
         log.info("Contact created: contactId={}, username={}", saved.getId(), username);
         return toContactResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContactResponse get(User user, String contactId) {
+        Contact contact = contactRepository.findByUserAndId(user, contactId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND));
+
+        return toContactResponse(contact);
     }
 
     /**

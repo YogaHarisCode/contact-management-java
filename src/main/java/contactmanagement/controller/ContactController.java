@@ -8,9 +8,7 @@ import contactmanagement.service.ContactService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller exposing contact endpoints under {@code /api/contacts}.
@@ -44,6 +42,15 @@ public class ContactController {
     )
     public WebResponse<ContactResponse> create(User user, @Valid @RequestBody CreateContactRequest request){
         ContactResponse response = contactService.create(user, request);
+        return WebResponse.<ContactResponse>builder().data(response).build();
+    }
+
+    @GetMapping(
+            path = "/api/contacts/{contactId}",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<ContactResponse> get(User user, @PathVariable("contactId") String contactId){
+        ContactResponse response = contactService.get(user, contactId);
         return WebResponse.<ContactResponse>builder().data(response).build();
     }
 }

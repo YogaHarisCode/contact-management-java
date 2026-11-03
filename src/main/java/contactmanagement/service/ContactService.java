@@ -20,4 +20,6 @@ public interface ContactService {
      * @return the created contact, including its generated id
      */
     ContactResponse create(User user, CreateContactRequest request);
+
+    ContactResponse get(User user, String contactId);
 }
