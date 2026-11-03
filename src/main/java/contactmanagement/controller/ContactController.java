@@ -45,6 +45,19 @@ public class ContactController {
         return WebResponse.<ContactResponse>builder().data(response).build();
     }
 
+    /**
+     * Returns one contact of the currently authenticated user.
+     *
+     * <p>Requires the {@code X-API-TOKEN} header; authentication is performed by
+     * {@link contactmanagement.resolver.UserArgumentResolver} before this method is invoked, so a
+     * missing, unknown, or expired token returns 401. A contact id that does not exist, or that
+     * belongs to another user, returns 404 with the same message.
+     *
+     * @param user      the authenticated user, injected by the argument resolver (not read from
+     *                  the request)
+     * @param contactId the id (UUID string) of the contact, taken from the URL path
+     * @return a {@link WebResponse} with HTTP 200 containing the contact
+     */
     @GetMapping(
             path = "/api/contacts/{contactId}",
             produces = MediaType.APPLICATION_JSON_VALUE

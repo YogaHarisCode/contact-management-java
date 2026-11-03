@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
  * {@link WebResponse}.
  *
  * <p>Deliberately contains no owner information, so no data of the {@link contactmanagement.entity.User}
- * can leak through a contact response.
+ * can leak through a contact response. Fields that are {@code null} are omitted from the JSON.
  */
 @Data
 @AllArgsConstructor

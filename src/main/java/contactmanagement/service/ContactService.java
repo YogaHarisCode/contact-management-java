@@ -21,5 +21,18 @@ public interface ContactService {
      */
     ContactResponse create(User user, CreateContactRequest request);
 
+    /**
+     * Returns a single contact of the given user.
+     *
+     * <p>Only contacts owned by {@code user} are visible. A contact that does not exist and a
+     * contact owned by someone else are treated the same way, so the response never reveals
+     * whether an id belongs to another user.
+     *
+     * @param user      the authenticated user, resolved from the {@code X-API-TOKEN} header
+     * @param contactId the id (UUID string) of the contact to return
+     * @return the contact, without any owner information
+     * @throws org.springframework.web.server.ResponseStatusException with status 404 when no
+     *         contact with this id exists for this user
+     */
     ContactResponse get(User user, String contactId);
 }
