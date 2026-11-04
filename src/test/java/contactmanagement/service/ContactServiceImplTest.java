@@ -3,7 +3,7 @@ package contactmanagement.service;
 import contactmanagement.entity.Contact;
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 import contactmanagement.repository.ContactRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -104,7 +104,7 @@ class ContactServiceImplTest {
     @Test
     void shouldSaveContactWithNullOptionalFieldsWhenOnlyFirstNameIsProvided() {
         givenSaveAssignsGeneratedId();
-        CreateContactRequest request = CreateContactRequest.builder().firstName("Yoga").build();
+        ContactRequest request = ContactRequest.builder().firstName("Yoga").build();
 
         ContactResponse response = contactService.create(authenticatedUser(), request);
 
@@ -247,7 +247,169 @@ class ContactServiceImplTest {
         assertThrows(IllegalStateException.class, () -> contactService.get(user, CONTACT_ID));
     }
 
-    // ------------------------------------------------------------ helpers
+    // ------------------------------------------------------------ update
+
+    @Test
+    void shouldReturnUpdatedContactResponseWhenContactBelongsToUser() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+
+        ContactResponse response = contactService.update(user, CONTACT_ID, updateRequest());
+
+        ContactResponse expected = ContactResponse.builder()
+                .id(CONTACT_ID)
+                .firstName("Yoga")
+                .lastName("Harisistianugroho")
+                .email("yoga@example.com")
+                .phone("089876543210")
+                .build();
+        assertEquals(expected, response);
+    }
+
+    @Test
+    void shouldOverwriteAllFieldsOnEntityWhenContactIsUpdated() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+
+        contactService.update(user, CONTACT_ID, updateRequest());
+
+        Contact saved = captureSavedContact();
+        assertEquals("Yoga", saved.getFirstName());
+        assertEquals("Harisistianugroho", saved.getLastName());
+        assertEquals("yoga@example.com", saved.getEmail());
+        assertEquals("089876543210", saved.getPhone());
+    }
+
+    @Test
+    void shouldKeepIdAndOwnerUnchangedWhenContactIsUpdated() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+
+        contactService.update(user, CONTACT_ID, updateRequest());
+
+        Contact saved = captureSavedContact();
+        assertEquals(CONTACT_ID, saved.getId());
+        assertSame(user, saved.getUser());
+    }
+
+    @Test
+    void shouldClearOptionalFieldsWhenTheyAreNotProvidedOnUpdate() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+        ContactRequest request = ContactRequest.builder().firstName("Yoga").build();
+
+        ContactResponse response = contactService.update(user, CONTACT_ID, request);
+
+        assertEquals("Yoga", response.getFirstName());
+        assertNull(response.getLastName());
+        assertNull(response.getEmail());
+        assertNull(response.getPhone());
+    }
+
+    /** Regression test (mencegah bug lama muncul lagi): email null dulu menyebabkan NPE. */
+    @Test
+    void shouldStoreNullEmailWhenEmailIsNullOnUpdate() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+        ContactRequest request = ContactRequest.builder().firstName("Yoga").email(null).build();
+
+        contactService.update(user, CONTACT_ID, request);
+
+        assertNull(captureSavedContact().getEmail());
+    }
+
+    @Test
+    void shouldStoreNullEmailWhenEmailIsEmptyStringOnUpdate() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+        ContactRequest request = ContactRequest.builder().firstName("Yoga").email("").build();
+
+        contactService.update(user, CONTACT_ID, request);
+
+        assertNull(captureSavedContact().getEmail());
+    }
+
+    @Test
+    void shouldQueryRepositoryWithAuthenticatedUserAndContactIdWhenUpdating() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        givenSaveReturnsSameEntity();
+
+        contactService.update(user, CONTACT_ID, updateRequest());
+
+        verify(contactRepository, times(1)).findByUserAndId(user, CONTACT_ID);
+        verify(contactRepository, times(1)).save(any(Contact.class));
+    }
+
+    @Test
+    void shouldThrowNotFoundAndSaveNothingWhenUpdatingContactThatDoesNotExist() {
+        User user = authenticatedUser();
+        when(contactRepository.findByUserAndId(user, CONTACT_ID)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> contactService.update(user, CONTACT_ID, updateRequest()));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals(NOT_FOUND_MESSAGE, exception.getReason());
+        verify(contactRepository, never()).save(any(Contact.class));
+    }
+
+    /** IDOR: lookup di-scope ke pemanggil, jadi id milik user lain terlihat sebagai "not found". */
+    @Test
+    void shouldThrowNotFoundAndSaveNothingWhenUpdatingContactOfAnotherUser() {
+        User intruder = new User();
+        intruder.setUsername("janedoe");
+        when(contactRepository.findByUserAndId(intruder, CONTACT_ID)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> contactService.update(intruder, CONTACT_ID, updateRequest()));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals(NOT_FOUND_MESSAGE, exception.getReason());
+        verify(contactRepository).findByUserAndId(intruder, CONTACT_ID);
+        verify(contactRepository, never()).save(any(Contact.class));
+    }
+
+    @Test
+    void shouldPropagateExceptionWhenRepositorySaveFailsOnUpdate() {
+        User user = authenticatedUser();
+        givenStoredContactIsFoundFor(user);
+        when(contactRepository.save(any(Contact.class)))
+                .thenThrow(new DataIntegrityViolationException("save failed"));
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> contactService.update(user, CONTACT_ID, updateRequest()));
+    }
+
+    // -------------------------------------------------------------- Helpers
+
+    /** Stubs the owner-scoped lookup to return a stored contact owned by {@code user}. */
+    private void givenStoredContactIsFoundFor(User user) {
+        when(contactRepository.findByUserAndId(user, CONTACT_ID))
+                .thenReturn(Optional.of(storedContact(user)));
+    }
+
+    /** Simulates save() on an existing entity: returns the same instance. */
+    private void givenSaveReturnsSameEntity() {
+        when(contactRepository.save(any(Contact.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    private static ContactRequest updateRequest() {
+        return ContactRequest.builder()
+                .firstName("Yoga")
+                .lastName("Harisistianugroho")
+                .email("yoga@example.com")
+                .phone("089876543210")
+                .build();
+    }
+
 
     /** Simulates the repository: assigns an id like GenerationType.UUID does on persist. */
     private void givenSaveAssignsGeneratedId() {
@@ -265,8 +427,8 @@ class ContactServiceImplTest {
         return captor.getValue();
     }
 
-    private static CreateContactRequest fullRequest() {
-        return CreateContactRequest.builder()
+    private static ContactRequest fullRequest() {
+        return ContactRequest.builder()
                 .firstName("Yoga")
                 .lastName("Harisistianugroho")
                 .email("yoga@example.com")

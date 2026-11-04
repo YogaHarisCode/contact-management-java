@@ -3,7 +3,7 @@ package contactmanagement.controller;
 import contactmanagement.entity.Contact;
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 import contactmanagement.model.WebResponse;
 import contactmanagement.repository.ContactRepository;
 import contactmanagement.repository.UserRepository;
@@ -111,7 +111,7 @@ class ContactControllerTest {
     @Test
     void shouldCreateContactWithNullOptionalFieldsWhenOnlyFirstNameIsProvided() {
         WebResponse<ContactResponse> response = postOk(VALID_TOKEN,
-                CreateContactRequest.builder().firstName("Yoga").build());
+                ContactRequest.builder().firstName("Yoga").build());
 
         assertEquals("Yoga", response.getData().getFirstName());
         assertNull(response.getData().getLastName());
@@ -128,7 +128,7 @@ class ContactControllerTest {
     void shouldAcceptValuesOnLengthBoundaries() {
         String of100 = "a".repeat(100);
 
-        WebResponse<ContactResponse> response = postOk(VALID_TOKEN, CreateContactRequest.builder()
+        WebResponse<ContactResponse> response = postOk(VALID_TOKEN, ContactRequest.builder()
                 .firstName(of100)
                 .lastName(of100)
                 .build());
@@ -178,7 +178,7 @@ class ContactControllerTest {
     /** The {@code User} parameter is resolved before the body, so 401 wins over 400. */
     @Test
     void shouldReturnUnauthorizedWhenTokenIsMissingAndBodyIsInvalid() {
-        assertUnauthorized(postContact(null, CreateContactRequest.builder().firstName("").build()));
+        assertUnauthorized(postContact(null, ContactRequest.builder().firstName("").build()));
 
         assertEquals(0, contactRepository.count());
     }
@@ -187,7 +187,7 @@ class ContactControllerTest {
 
     @ParameterizedTest
     @MethodSource("invalidRequests")
-    void shouldReturnBadRequestAndSaveNothingWhenRequestFailsValidation(CreateContactRequest invalid) {
+    void shouldReturnBadRequestAndSaveNothingWhenRequestFailsValidation(ContactRequest invalid) {
         WebResponse<ContactResponse> response = postContact(VALID_TOKEN, invalid)
                 .expectStatus().isBadRequest()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
@@ -216,18 +216,18 @@ class ContactControllerTest {
     }
 
     /** One invalid payload per constraint: blank, null, whitespace-only, too long, bad email. */
-    static Stream<CreateContactRequest> invalidRequests() {
+    static Stream<ContactRequest> invalidRequests() {
         String tooLong = "a".repeat(101);
         return Stream.of(
-                CreateContactRequest.builder().firstName(null).build(),
-                CreateContactRequest.builder().firstName("").build(),
-                CreateContactRequest.builder().firstName("   ").build(),
-                CreateContactRequest.builder().firstName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Yoga").lastName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Yoga").email("not-an-email").build(),
-                CreateContactRequest.builder().firstName("Yoga").email("eko@").build(),
-                CreateContactRequest.builder().firstName("Yoga").email("a".repeat(195) + "@x.com").build(),
-                CreateContactRequest.builder().firstName("Yoga").phone(tooLong).build()
+                ContactRequest.builder().firstName(null).build(),
+                ContactRequest.builder().firstName("").build(),
+                ContactRequest.builder().firstName("   ").build(),
+                ContactRequest.builder().firstName(tooLong).build(),
+                ContactRequest.builder().firstName("Yoga").lastName(tooLong).build(),
+                ContactRequest.builder().firstName("Yoga").email("not-an-email").build(),
+                ContactRequest.builder().firstName("Yoga").email("eko@").build(),
+                ContactRequest.builder().firstName("Yoga").email("a".repeat(195) + "@x.com").build(),
+                ContactRequest.builder().firstName("Yoga").phone(tooLong).build()
         );
     }
 
@@ -349,7 +349,258 @@ class ContactControllerTest {
         assertUnauthorized(getContact(VALID_TOKEN, contact.getId()));
     }
 
+    // ====================================================== UPDATE CONTACT
+
+    @Test
+    void shouldUpdateContactSuccessfullyWhenDataIsValid() {
+        Contact contact = givenStoredContact();
+
+        WebResponse<ContactResponse> response = putOk(contact.getId(), updateRequest());
+
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(contact.getId(), response.getData().getId());
+        assertEquals("Eko", response.getData().getFirstName());
+        assertEquals("Kurniawan", response.getData().getLastName());
+        assertEquals("eko@example.com", response.getData().getEmail());
+        assertEquals("089876543210", response.getData().getPhone());
+    }
+
+    @Test
+    void shouldPersistChangesInDatabaseWhenContactIsUpdated() {
+        Contact contact = givenStoredContact();
+
+        putOk(contact.getId(), updateRequest());
+
+        assertStoredContact(contact.getId(), "Eko", "Kurniawan", "eko@example.com", "089876543210");
+        assertEquals(1, contactRepository.count());
+    }
+
+    @Test
+    void shouldReturnUpdatedValuesWhenContactIsFetchedAfterUpdate() {
+        Contact contact = givenStoredContact();
+
+        putOk(contact.getId(), updateRequest());
+
+        WebResponse<ContactResponse> fetched = getContactOk(VALID_TOKEN, contact.getId());
+        assertEquals("Eko", fetched.getData().getFirstName());
+        assertEquals("089876543210", fetched.getData().getPhone());
+    }
+
+    @Test
+    void shouldClearOptionalFieldsInDatabaseWhenTheyAreNotProvidedOnUpdate() {
+        Contact contact = givenStoredContact();
+
+        WebResponse<ContactResponse> response = putOk(contact.getId(),
+                ContactRequest.builder().firstName("Eko").build());
+
+        assertEquals("Eko", response.getData().getFirstName());
+        assertNull(response.getData().getLastName());
+        assertNull(response.getData().getEmail());
+        assertNull(response.getData().getPhone());
+        assertStoredContact(contact.getId(), "Eko", null, null, null);
+    }
+
+    @Test
+    void shouldStoreNullEmailWhenEmailIsEmptyStringOnUpdate() {
+        Contact contact = givenStoredContact();
+
+        WebResponse<ContactResponse> response = putOk(contact.getId(),
+                ContactRequest.builder().firstName("Eko").email("").build());
+
+        assertNull(response.getData().getEmail());
+        assertNull(contactRepository.findById(contact.getId()).orElseThrow().getEmail());
+    }
+
+    @Test
+    void shouldKeepOwnerUnchangedWhenContactIsUpdated() {
+        Contact contact = givenStoredContact();
+
+        putOk(contact.getId(), updateRequest());
+
+        User owner = userRepository.findById(USERNAME).orElseThrow();
+        assertTrue(contactRepository.findByUserAndId(owner, contact.getId()).isPresent());
+    }
+
+    @Test
+    void shouldUpdateOnlyTargetContactWhenUserHasMultipleContacts() {
+        Contact target = givenStoredContact();
+        Contact other = saveContact(USERNAME, "Other", "Contact", "other@example.com", "081111111111");
+
+        putOk(target.getId(), updateRequest());
+
+        assertStoredContact(target.getId(), "Eko", "Kurniawan", "eko@example.com", "089876543210");
+        assertStoredContact(other.getId(), "Other", "Contact", "other@example.com", "081111111111");
+    }
+
+    @Test
+    void shouldIgnoreIdInBodyAndUpdateContactFromPathWhenBodyContainsId() {
+        Contact target = givenStoredContact();
+        Contact other = saveContact(USERNAME, "Other", null, null, null);
+
+        putContact(VALID_TOKEN, target.getId(),
+                "{\"id\":\"" + other.getId() + "\",\"firstName\":\"Eko\"}")
+                .expectStatus().isOk();
+
+        assertEquals("Eko", contactRepository.findById(target.getId()).orElseThrow().getFirstName());
+        assertEquals("Other", contactRepository.findById(other.getId()).orElseThrow().getFirstName());
+    }
+
+    // ---------------------------------------------- update: not found
+
+    @Test
+    void shouldReturnNotFoundAndCreateNothingWhenUpdatingUnknownContactId() {
+        assertNotFound(putContact(VALID_TOKEN, UUID.randomUUID().toString(), updateRequest()));
+
+        assertEquals(0, contactRepository.count());
+    }
+
+    /** IDOR: id milik user lain harus terlihat sebagai "not found" dan datanya tidak berubah. */
+    @Test
+    void shouldReturnNotFoundAndKeepDataWhenUpdatingContactOfAnotherUser() {
+        saveUser(OTHER_USERNAME, "Jane Doe", OTHER_TOKEN, futureExpiry());
+        Contact othersContact = saveContact(OTHER_USERNAME, "Secret", "Contact", "secret@example.com", "081234567890");
+
+        assertNotFound(putContact(VALID_TOKEN, othersContact.getId(), updateRequest()));
+
+        assertStoredContact(othersContact.getId(), "Secret", "Contact", "secret@example.com", "081234567890");
+    }
+
+    // ---------------------------------------------- update: unauthorized
+
+    @Test
+    void shouldReturnUnauthorizedAndKeepDataWhenUpdateTokenHeaderIsMissing() {
+        Contact contact = givenStoredContact();
+
+        assertUnauthorized(putContact(null, contact.getId(), updateRequest()));
+
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "unknown-token"})
+    void shouldReturnUnauthorizedAndKeepDataWhenUpdateTokenIsEmptyOrUnknown(String token) {
+        Contact contact = givenStoredContact();
+
+        assertUnauthorized(putContact(token, contact.getId(), updateRequest()));
+
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
+    @Test
+    void shouldReturnUnauthorizedAndKeepDataWhenUpdateTokenIsExpired() {
+        Contact contact = givenStoredContact();
+        User user = userRepository.findById(USERNAME).orElseThrow();
+        user.setTokenExpiredAt(System.currentTimeMillis() - 1_000L);
+        userRepository.save(user);
+
+        assertUnauthorized(putContact(VALID_TOKEN, contact.getId(), updateRequest()));
+
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
+    /** The {@code User} parameter is resolved before the body, so 401 wins over 400. */
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenIsMissingAndBodyIsInvalid() {
+        Contact contact = givenStoredContact();
+
+        assertUnauthorized(putContact(null, contact.getId(),
+                ContactRequest.builder().firstName("").build()));
+
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
+    // ---------------------------------------------- update: validation
+
+    @ParameterizedTest
+    @MethodSource("invalidRequests")
+    void shouldReturnBadRequestAndKeepDataWhenUpdateRequestFailsValidation(ContactRequest invalid) {
+        Contact contact = givenStoredContact();
+
+        WebResponse<ContactResponse> response = putContact(VALID_TOKEN, contact.getId(), invalid)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
+    @Test
+    void shouldReturnBadRequestAndKeepDataWhenUpdateBodyIsMalformedJson() {
+        Contact contact = givenStoredContact();
+
+        WebResponse<ContactResponse> response = putContact(VALID_TOKEN, contact.getId(), "{ \"firstName\": ")
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Malformed or missing request body", response.getErrors());
+        assertStoredContactIsOriginal(contact.getId());
+    }
+
     // ------------------------------------------------------------ helpers
+
+
+    /** Sends PUT /api/contacts/{contactId}; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec putContact(String token, String contactId, Object body) {
+        return client.put()
+                .uri(CONTACTS_URI + "/{contactId}", contactId)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .body(body)
+                .exchange();
+    }
+
+    /** Sends PUT, asserts HTTP 200, and returns the parsed response. */
+    private WebResponse<ContactResponse> putOk(String contactId, Object body) {
+        return putContact(ContactControllerTest.VALID_TOKEN, contactId, body)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private static ContactRequest updateRequest() {
+        return ContactRequest.builder()
+                .firstName("Eko")
+                .lastName("Kurniawan")
+                .email("eko@example.com")
+                .phone("089876543210")
+                .build();
+    }
+
+    /** Persists the contact that update tests start from, owned by the primary test user. */
+    private Contact givenStoredContact() {
+        return saveContact(USERNAME, "Yoga", "Harisistianugroho", "yoga@example.com", "081234567890");
+    }
+
+    /** Verifies the stored columns; reads only scalar fields, so the lazy owner is never touched. */
+    private void assertStoredContact(String id, String firstName, String lastName,
+                                     String email, String phone) {
+        Contact stored = contactRepository.findById(id).orElseThrow();
+        assertEquals(firstName, stored.getFirstName());
+        assertEquals(lastName, stored.getLastName());
+        assertEquals(email, stored.getEmail());
+        assertEquals(phone, stored.getPhone());
+    }
+
+    private void assertStoredContactIsOriginal(String id) {
+        assertStoredContact(id, "Yoga", "Harisistianugroho", "yoga@example.com", "081234567890");
+    }
 
     /** Sends POST /api/contacts; the token header is omitted when {@code token} is null. */
     private RestTestClient.ResponseSpec postContact(String token, Object body) {
@@ -399,8 +650,8 @@ class ContactControllerTest {
         userRepository.save(user);
     }
 
-    private static CreateContactRequest fullRequest() {
-        return CreateContactRequest.builder()
+    private static ContactRequest fullRequest() {
+        return ContactRequest.builder()
                 .firstName("Yoga")
                 .lastName("Harisistianugroho")
                 .email("yoga@example.com")

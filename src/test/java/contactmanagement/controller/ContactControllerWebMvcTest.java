@@ -2,7 +2,7 @@ package contactmanagement.controller;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 import contactmanagement.model.WebResponse;
 import contactmanagement.repository.UserRepository;
 import contactmanagement.service.ContactService;
@@ -63,7 +63,7 @@ class ContactControllerWebMvcTest {
     @ValueSource(strings = {"081234567890", "6281234567890", "+6281234567890"})
     void shouldReturnOkWhenPhoneFormatIsValid(String phone) {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = CreateContactRequest.builder()
+        ContactRequest request = ContactRequest.builder()
                 .firstName("Yoga").phone(phone).build();
         when(contactService.create(user, request)).thenReturn(
                 ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").phone(phone).build());
@@ -74,7 +74,7 @@ class ContactControllerWebMvcTest {
     @Test
     void shouldReturnCreatedContactWhenRequestIsValid() {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = fullRequest();
+        ContactRequest request = fullRequest();
         when(contactService.create(user, request)).thenReturn(fullResponse());
 
         WebResponse<ContactResponse> response = postContact(TOKEN, request)
@@ -96,7 +96,7 @@ class ContactControllerWebMvcTest {
     @Test
     void shouldPassAuthenticatedUserAndRequestToServiceWhenRequestIsValid() {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = fullRequest();
+        ContactRequest request = fullRequest();
         when(contactService.create(user, request)).thenReturn(fullResponse());
 
         postContact(TOKEN, request).expectStatus().isOk();
@@ -107,7 +107,7 @@ class ContactControllerWebMvcTest {
     @Test
     void shouldReturnOkWhenOnlyFirstNameIsProvided() {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = CreateContactRequest.builder().firstName("Yoga").build();
+        ContactRequest request = ContactRequest.builder().firstName("Yoga").build();
         when(contactService.create(user, request)).thenReturn(
                 ContactResponse.builder().id(CONTACT_ID).firstName("Yoga").build());
 
@@ -127,7 +127,7 @@ class ContactControllerWebMvcTest {
     void shouldReturnOkWhenValuesAreOnLengthBoundaries() {
         User user = givenAuthenticatedUser();
         String of100 = "a".repeat(100);
-        CreateContactRequest request = CreateContactRequest.builder()
+        ContactRequest request = ContactRequest.builder()
                 .firstName(of100)
                 .lastName(of100)
 //                .phone(of100)
@@ -143,7 +143,7 @@ class ContactControllerWebMvcTest {
     @Test
     void shouldNotExposeTokenOrPasswordWhenContactIsCreated() {
         User user = givenAuthenticatedUser();
-        CreateContactRequest request = fullRequest();
+        ContactRequest request = fullRequest();
         when(contactService.create(user, request)).thenReturn(fullResponse());
 
         String rawBody = postContact(TOKEN, request)
@@ -198,7 +198,7 @@ class ContactControllerWebMvcTest {
     /** The {@code User} parameter is resolved before the body, so 401 wins over 400. */
     @Test
     void shouldReturnUnauthorizedWhenTokenIsMissingAndBodyIsInvalid() {
-        CreateContactRequest invalid = CreateContactRequest.builder().firstName("").build();
+        ContactRequest invalid = ContactRequest.builder().firstName("").build();
 
         assertUnauthorized(postContact(null, invalid));
 
@@ -209,7 +209,7 @@ class ContactControllerWebMvcTest {
 
     @ParameterizedTest
     @MethodSource("invalidRequests")
-    void shouldReturnBadRequestWhenRequestFailsValidation(CreateContactRequest invalid) {
+    void shouldReturnBadRequestWhenRequestFailsValidation(ContactRequest invalid) {
         givenAuthenticatedUser();
 
         WebResponse<ContactResponse> response = postContact(TOKEN, invalid)
@@ -230,7 +230,7 @@ class ContactControllerWebMvcTest {
         givenAuthenticatedUser();
 
         WebResponse<ContactResponse> response = postContact(TOKEN,
-                CreateContactRequest.builder().firstName("   ").build())
+                ContactRequest.builder().firstName("   ").build())
                 .expectStatus().isBadRequest()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
                 })
@@ -246,7 +246,7 @@ class ContactControllerWebMvcTest {
         givenAuthenticatedUser();
 
         WebResponse<ContactResponse> response = postContact(TOKEN,
-                CreateContactRequest.builder().firstName("Yoga").email("not-an-email").build())
+                ContactRequest.builder().firstName("Yoga").email("not-an-email").build())
                 .expectStatus().isBadRequest()
                 .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
                 })
@@ -295,22 +295,22 @@ class ContactControllerWebMvcTest {
     }
 
     /** One invalid payload per constraint: blank, null, whitespace-only, too long, bad email. */
-    static Stream<CreateContactRequest> invalidRequests() {
+    static Stream<ContactRequest> invalidRequests() {
         String tooLong = "a".repeat(101);
         return Stream.of(
-                CreateContactRequest.builder().firstName(null).build(),
-                CreateContactRequest.builder().firstName("").build(),
-                CreateContactRequest.builder().firstName("   ").build(),
-                CreateContactRequest.builder().firstName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Yoga").lastName(tooLong).build(),
-                CreateContactRequest.builder().firstName("Yoga").email("not-an-email").build(),
-                CreateContactRequest.builder().firstName("Yoga").email("yoga@").build(),
-                CreateContactRequest.builder().firstName("Yoga").email("a".repeat(195) + "@x.com").build(),
-                CreateContactRequest.builder().firstName("Yoga").phone(tooLong).build(),
-                CreateContactRequest.builder().firstName("Yoga").phone("abc").build(),
-                CreateContactRequest.builder().firstName("Yoga").phone("0812345").build(),
-                CreateContactRequest.builder().firstName("Yoga").phone("081" + "2".repeat(11)).build(),
-                CreateContactRequest.builder().firstName("Yoga").phone("0812-3456-7890").build()
+                ContactRequest.builder().firstName(null).build(),
+                ContactRequest.builder().firstName("").build(),
+                ContactRequest.builder().firstName("   ").build(),
+                ContactRequest.builder().firstName(tooLong).build(),
+                ContactRequest.builder().firstName("Yoga").lastName(tooLong).build(),
+                ContactRequest.builder().firstName("Yoga").email("not-an-email").build(),
+                ContactRequest.builder().firstName("Yoga").email("yoga@").build(),
+                ContactRequest.builder().firstName("Yoga").email("a".repeat(195) + "@x.com").build(),
+                ContactRequest.builder().firstName("Yoga").phone(tooLong).build(),
+                ContactRequest.builder().firstName("Yoga").phone("abc").build(),
+                ContactRequest.builder().firstName("Yoga").phone("0812345").build(),
+                ContactRequest.builder().firstName("Yoga").phone("081" + "2".repeat(11)).build(),
+                ContactRequest.builder().firstName("Yoga").phone("0812-3456-7890").build()
         );
     }
 
@@ -436,7 +436,295 @@ class ContactControllerWebMvcTest {
         verifyNoInteractions(contactService);
     }
 
+    // ====================================================== UPDATE CONTACT
+
+    @Test
+    void shouldReturnUpdatedContactWhenRequestIsValid() {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = updateRequest();
+        when(contactService.update(user, CONTACT_ID, request)).thenReturn(updatedResponse());
+
+        WebResponse<ContactResponse> response = putContact(TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(CONTACT_ID, response.getData().getId());
+        assertEquals("Eko", response.getData().getFirstName());
+        assertEquals("Kurniawan", response.getData().getLastName());
+        assertEquals("eko@example.com", response.getData().getEmail());
+        assertEquals("089876543210", response.getData().getPhone());
+    }
+
+    @Test
+    void shouldPassAuthenticatedUserContactIdAndRequestToServiceWhenUpdatingContact() {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = updateRequest();
+        when(contactService.update(user, CONTACT_ID, request)).thenReturn(updatedResponse());
+
+        putContact(TOKEN, request).expectStatus().isOk();
+
+        verify(contactService).update(user, CONTACT_ID, request);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"081234567890", "6281234567890", "+6281234567890"})
+    void shouldReturnOkWhenUpdatingWithValidPhoneFormat(String phone) {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = ContactRequest.builder().firstName("Eko").phone(phone).build();
+        when(contactService.update(user, CONTACT_ID, request)).thenReturn(
+                ContactResponse.builder().id(CONTACT_ID).firstName("Eko").phone(phone).build());
+
+        putContact(TOKEN, request).expectStatus().isOk();
+    }
+
+    @Test
+    void shouldReturnOkWhenUpdatingWithOnlyFirstName() {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = ContactRequest.builder().firstName("Eko").build();
+        when(contactService.update(user, CONTACT_ID, request)).thenReturn(
+                ContactResponse.builder().id(CONTACT_ID).firstName("Eko").build());
+
+        String rawBody = putContact(TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertTrue(rawBody.contains("firstName"));
+        assertFalse(rawBody.contains("lastName"));
+        assertFalse(rawBody.contains("email"));
+        assertFalse(rawBody.contains("phone"));
+    }
+
+    /** Id di body tidak boleh dipakai: hanya id dari path yang sampai ke service. */
+    @Test
+    void shouldIgnoreIdInBodyAndUseIdFromPathWhenUpdatingContact() {
+        User user = givenAuthenticatedUser();
+        ContactRequest expected = ContactRequest.builder().firstName("Eko").build();
+        when(contactService.update(user, CONTACT_ID, expected)).thenReturn(
+                ContactResponse.builder().id(CONTACT_ID).firstName("Eko").build());
+
+        putContact(TOKEN, "{\"id\":\"other-id\",\"firstName\":\"Eko\"}")
+                .expectStatus().isOk();
+
+        verify(contactService).update(user, CONTACT_ID, expected);
+    }
+
+    @Test
+    void shouldNotExposeTokenOrPasswordWhenContactIsUpdated() {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = updateRequest();
+        when(contactService.update(user, CONTACT_ID, request)).thenReturn(updatedResponse());
+
+        String rawBody = putContact(TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(rawBody);
+        assertFalse(rawBody.contains("password"));
+        assertFalse(rawBody.contains("bcrypt-hash"));
+        assertFalse(rawBody.contains("token"));
+        assertFalse(rawBody.contains(TOKEN));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenServiceCannotFindContactToUpdate() {
+        User user = givenAuthenticatedUser();
+        ContactRequest request = updateRequest();
+        when(contactService.update(user, CONTACT_ID, request))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Contact is not found"));
+
+        WebResponse<ContactResponse> response = putContact(TOKEN, request)
+                .expectStatus().isNotFound()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertEquals("Contact is not found", response.getErrors());
+    }
+
+    // ---------------------------------------------- update: unauthorized
+
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenHeaderIsMissing() {
+        assertUnauthorized(putContact(null, updateRequest()));
+
+        verifyNoInteractions(userRepository, contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenHeaderIsEmpty() {
+        assertUnauthorized(putContact("", updateRequest()));
+
+        verifyNoInteractions(userRepository, contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenIsNotFound() {
+        when(userRepository.findFirstByToken("unknown-token")).thenReturn(Optional.empty());
+
+        assertUnauthorized(putContact("unknown-token", updateRequest()));
+
+        verifyNoInteractions(contactService);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenIsExpired() {
+        User expired = validUser();
+        expired.setTokenExpiredAt(System.currentTimeMillis() - 1_000L);
+        when(userRepository.findFirstByToken(TOKEN)).thenReturn(Optional.of(expired));
+
+        assertUnauthorized(putContact(TOKEN, updateRequest()));
+
+        verifyNoInteractions(contactService);
+    }
+
+    /** The {@code User} parameter is resolved before the body, so 401 wins over 400. */
+    @Test
+    void shouldReturnUnauthorizedWhenUpdateTokenIsMissingAndBodyIsInvalid() {
+        ContactRequest invalid = ContactRequest.builder().firstName("").build();
+
+        assertUnauthorized(putContact(null, invalid));
+
+        verifyNoInteractions(contactService);
+    }
+
+    // ---------------------------------------------- update: validation
+
+    @ParameterizedTest
+    @MethodSource("invalidRequests")
+    void shouldReturnBadRequestWhenUpdateRequestFailsValidation(ContactRequest invalid) {
+        givenAuthenticatedUser();
+
+        WebResponse<ContactResponse> response = putContact(TOKEN, invalid)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        verifyNoInteractions(contactService);
+    }
+
+    @Test
+    void shouldMentionFirstNameInErrorWhenUpdatingWithBlankFirstName() {
+        givenAuthenticatedUser();
+
+        WebResponse<ContactResponse> response = putContact(TOKEN,
+                ContactRequest.builder().firstName("   ").build())
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertTrue(response.getErrors().toString().contains("firstName"));
+    }
+
+    @Test
+    void shouldReturnPhoneMessageWhenUpdatingWithInvalidPhone() {
+        givenAuthenticatedUser();
+
+        WebResponse<ContactResponse> response = putContact(TOKEN,
+                ContactRequest.builder().firstName("Eko").phone("0812-3456-7890").build())
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("phone must be a valid Indonesian mobile number", response.getErrors());
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenUpdateBodyIsMalformedJson() {
+        givenAuthenticatedUser();
+
+        WebResponse<ContactResponse> response = putContact(TOKEN, "{ \"firstName\": ")
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Malformed or missing request body", response.getErrors());
+        verifyNoInteractions(contactService);
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenUpdateBodyIsMissing() {
+        givenAuthenticatedUser();
+
+        WebResponse<ContactResponse> response = client.put()
+                .uri(CONTACTS_URI + "/{contactId}", CONTACT_ID)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> headers.add(TOKEN_HEADER, TOKEN))
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<ContactResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("Malformed or missing request body", response.getErrors());
+        verifyNoInteractions(contactService);
+    }
+
     // ------------------------------------------------------------ helpers
+
+
+    /** Sends PUT /api/contacts/{contactId}; the token header is omitted when {@code token} is null. */
+    private RestTestClient.ResponseSpec putContact(String token, Object body) {
+        return client.put()
+                .uri(CONTACTS_URI + "/{contactId}", ContactControllerWebMvcTest.CONTACT_ID)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.add(TOKEN_HEADER, token);
+                    }
+                })
+                .body(body)
+                .exchange();
+    }
+
+    private static ContactRequest updateRequest() {
+        return ContactRequest.builder()
+                .firstName("Eko")
+                .lastName("Kurniawan")
+                .email("eko@example.com")
+                .phone("089876543210")
+                .build();
+    }
+
+    private static ContactResponse updatedResponse() {
+        return ContactResponse.builder()
+                .id(CONTACT_ID)
+                .firstName("Eko")
+                .lastName("Kurniawan")
+                .email("eko@example.com")
+                .phone("089876543210")
+                .build();
+    }
 
     /** Stubs the repository so the resolver authenticates {@link #TOKEN} as {@code johndoe}. */
     private User givenAuthenticatedUser() {
@@ -473,8 +761,8 @@ class ContactControllerWebMvcTest {
         assertEquals("Unauthorized", response.getErrors());
     }
 
-    private static CreateContactRequest fullRequest() {
-        return CreateContactRequest.builder()
+    private static ContactRequest fullRequest() {
+        return ContactRequest.builder()
                 .firstName("Yoga")
                 .lastName("Harisistianugroho")
                 .email("yoga@example.com")
