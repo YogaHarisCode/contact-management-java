@@ -3,10 +3,11 @@ package contactmanagement.service;
 import contactmanagement.entity.Contact;
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 import contactmanagement.repository.ContactRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.flywaydb.core.internal.util.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +35,7 @@ public class ContactServiceImpl implements ContactService{
      */
     @Override
     @Transactional
-    public ContactResponse create(User user, CreateContactRequest request) {
+    public ContactResponse create(User user, ContactRequest request) {
         String username = user.getUsername();
         log.debug("Create contact started: username={}", username);
 
@@ -68,17 +69,33 @@ public class ContactServiceImpl implements ContactService{
         String username = user.getUsername();
         log.debug("Get contact started: contactId={}, username={}", contactId, username);
 
-        // Matching owner and id together is the IDOR guard: another user's id yields "not found".
-        Contact contact = contactRepository.findByUserAndId(user, contactId)
-                .orElseThrow(() -> {
-                    // WARN because repeated misses can indicate someone guessing contact ids.
-                    log.warn("Get contact rejected, contact not found: contactId={}, username={}",
-                            contactId, username);
-                    return new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND);
-                });
+        Contact contact = findOwnedContact(user, contactId);
 
         log.debug("Contact retrieved: contactId={}, username={}", contactId, username);
         return toContactResponse(contact);
+    }
+
+    @Override
+    @Transactional
+    public ContactResponse update(User user, String contactId, ContactRequest request) {
+        Contact contact = findOwnedContact(user, contactId);
+
+        contact.setFirstName(request.getFirstName());
+        contact.setLastName(request.getLastName());
+        // hasText is null-safe, and blank email is stored as null.
+        contact.setEmail(StringUtils.hasText(request.getEmail()) ? request.getEmail() : null);
+        contact.setPhone(request.getPhone());
+
+        return toContactResponse(contactRepository.save(contact));
+    }
+
+    private Contact findOwnedContact(User user, String contactId){
+        return contactRepository.findByUserAndId(user, contactId)
+                .orElseThrow(() -> {
+                    log.warn("Contact not found: contactId={}, username={}",
+                            contactId, user.getUsername());
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, CONTACT_NOT_FOUND);
+                });
     }
 
     /**

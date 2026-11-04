@@ -2,7 +2,7 @@ package contactmanagement.service;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 
 /**
  * Business operations related to contacts.
@@ -19,7 +19,7 @@ public interface ContactService {
      * @param request the validated contact data
      * @return the created contact, including its generated id
      */
-    ContactResponse create(User user, CreateContactRequest request);
+    ContactResponse create(User user, ContactRequest request);
 
     /**
      * Returns a single contact of the given user.
@@ -35,4 +35,6 @@ public interface ContactService {
      *         contact with this id exists for this user
      */
     ContactResponse get(User user, String contactId);
+
+    ContactResponse update(User user, String contactId, ContactRequest request);
 }

@@ -2,7 +2,7 @@ package contactmanagement.controller;
 
 import contactmanagement.entity.User;
 import contactmanagement.model.ContactResponse;
-import contactmanagement.model.CreateContactRequest;
+import contactmanagement.model.ContactRequest;
 import contactmanagement.model.WebResponse;
 import contactmanagement.service.ContactService;
 import jakarta.validation.Valid;
@@ -40,7 +40,7 @@ public class ContactController {
             produces = MediaType.APPLICATION_JSON_VALUE,
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
-    public WebResponse<ContactResponse> create(User user, @Valid @RequestBody CreateContactRequest request){
+    public WebResponse<ContactResponse> create(User user, @Valid @RequestBody ContactRequest request){
         ContactResponse response = contactService.create(user, request);
         return WebResponse.<ContactResponse>builder().data(response).build();
     }
@@ -64,6 +64,18 @@ public class ContactController {
     )
     public WebResponse<ContactResponse> get(User user, @PathVariable("contactId") String contactId){
         ContactResponse response = contactService.get(user, contactId);
+        return WebResponse.<ContactResponse>builder().data(response).build();
+    }
+
+    @PutMapping(
+            path = "/api/contacts/{contactId}",
+            produces = MediaType.APPLICATION_JSON_VALUE,
+            consumes = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<ContactResponse> update(User user,
+                                               @PathVariable("contactId") String contactId,
+                                               @Valid @RequestBody ContactRequest request){
+        ContactResponse response = contactService.update(user, contactId, request);
         return WebResponse.<ContactResponse>builder().data(response).build();
     }
 }
