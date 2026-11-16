@@ -38,7 +38,26 @@ Register a new user to the system.
 #### Bad Request (400 Bad Request)
 ```json
 {
-  "errors": "Username already exists"
+  "errors": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "username",
+        "message": "must not be blank"
+      }
+    ]
+  }
+}
+```
+
+#### Conflict (409 Conflict)
+```json
+{
+  "errors": {
+    "code": "409 CONFLICT",
+    "message": "Username already exists"
+  }
 }
 ```
 
@@ -76,7 +95,10 @@ Authenticate user and receive an authentication token.
 #### Unauthorized (401 Unauthorized)
 ```json
 {
-  "errors": "Username or password wrong"
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Username or password wrong"
+  }
 }
 ```
 
@@ -107,7 +129,10 @@ Get detail profile of current authenticated user.
 #### Unauthorized (401 Unauthorized)
 ```json
 {
-  "errors": "Unauthorized"
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
 }
 ```
 
@@ -148,7 +173,10 @@ Update current authenticated user information (Name and/or Password).
 #### Unauthorized (401 Unauthorized)
 ```json
 {
-  "errors": "Unauthorized"
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
 }
 ```
 
@@ -176,6 +204,9 @@ Invalidate the current authentication token.
 #### Unauthorized (401 Unauthorized)
 ```json
 {
-  "errors": "Unauthorized"
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
 }
 ```
