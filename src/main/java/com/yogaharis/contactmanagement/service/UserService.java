@@ -5,6 +5,7 @@ import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -15,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final PasswordEncoder passwordEncoder;
@@ -28,6 +30,7 @@ public class UserService {
         boolean exists = userRepository.existsById(request.getUsername());
 
         if (exists){
+            log.warn("Register user rejected: reason={}, username={}", USERNAME_ALREADY_EXISTS,request.getUsername());
             throw responseStatusException(HttpStatus.CONFLICT, USERNAME_ALREADY_EXISTS);
         }
 
@@ -40,8 +43,11 @@ public class UserService {
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e){
+            log.warn("Register user rejected: reason=duplicate_username_on_save, username={}", request.getUsername());
             throw responseStatusException(HttpStatus.CONFLICT, USERNAME_ALREADY_EXISTS);
         }
+
+        log.info("User registered: username={}", user.getUsername());
 
         return toUserResponse(user);
     }

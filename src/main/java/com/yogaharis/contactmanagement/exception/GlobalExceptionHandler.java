@@ -3,6 +3,7 @@ package com.yogaharis.contactmanagement.exception;
 import com.yogaharis.contactmanagement.dto.ErrorDetail;
 import com.yogaharis.contactmanagement.dto.ErrorResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -15,15 +16,23 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<WebResponse<Void>> handleResponseStatusException(ResponseStatusException exception) {
+        HttpStatusCode status = exception.getStatusCode();
+        String message = exception.getReason();
+        if (status.is5xxServerError()) {
+            log.error("Request failed: status={}, message={}", status.value(), message, exception);
+        } else {
+            log.debug("Request rejected: status={}, message={}", status.value(), message);
+        }
         return buildError(
-                exception.getStatusCode().toString(),
-                exception.getReason(),
+                status.toString(),
+                message,
                 null,
-                exception.getStatusCode()
+                status
         );
     }
 
@@ -36,6 +45,8 @@ public class GlobalExceptionHandler {
                         .build()
                 )
                 .toList();
+        log.warn("Request validation failed: target={}, errors=[{}]",
+                errorDetails.getFirst().getField(), errorDetails.getFirst().getMessage());
 
         return buildError(
                 "VALIDATION_ERROR",
@@ -47,6 +58,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<WebResponse<Void>> handleHttpMessageNotReadable(HttpMessageNotReadableException exception) {
+        log.warn("Malformed or missing request body: exceptionType={}",
+                exception.getClass().getSimpleName());
         return buildError(
                 HttpStatus.BAD_REQUEST.toString(),
                 "Request body is missing or malformed",
