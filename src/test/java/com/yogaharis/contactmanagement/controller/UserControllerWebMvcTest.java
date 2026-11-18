@@ -24,6 +24,12 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Controller slice tests for {@link UserController} using {@code @WebMvcTest}.
+ * The service layer is mocked; validation and error responses are verified over HTTP.
+ *
+ * @author Yoga Harisistianugroho
+ */
 @WebMvcTest(UserController.class)
 @AutoConfigureRestTestClient
 public class UserControllerWebMvcTest {

@@ -14,6 +14,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Unit tests for {@link UserService}. The repository and password encoder are mocked,
+ * so no Spring context or database is involved.
+ *
+ * @author Yoga Harisistianugroho
+ */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 

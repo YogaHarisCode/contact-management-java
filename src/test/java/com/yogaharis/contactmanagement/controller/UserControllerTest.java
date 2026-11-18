@@ -25,6 +25,12 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Integration tests for the user endpoints, running the full application context
+ * against the {@code contact_management_test} database.
+ *
+ * @author Yoga Harisistianugroho
+ */
 @SpringBootTest
 @ActiveProfiles("test")
 @AutoConfigureRestTestClient
