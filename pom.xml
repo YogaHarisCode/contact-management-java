@@ -11,14 +11,17 @@
 	<groupId>com.yogaharis</groupId>
 	<artifactId>contact-management-java</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
+	<name>contact-management-java</name>
+	<description>RESTful API for contact management using Spring Boot</description>
+	<url>https://github.com/YogaHarisCode/contact-management-java</url>
 	<licenses>
 		<license/>
 	</licenses>
 	<developers>
-		<developer/>
+		<developer>
+			<name>Yoga Harisistianugroho</name>
+			<email>yogahariss@gmail.com</email>
+		</developer>
 	</developers>
 	<scm>
 		<connection/>
