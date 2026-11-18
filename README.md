@@ -2,7 +2,7 @@
 
 A REST API backend for managing users, contacts, and addresses, built with Java and Spring Boot.
 
-This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration is implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
+This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration and login are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
 
 ## Tech Stack
 
@@ -96,9 +96,11 @@ The project uses three kinds of tests for every feature:
 
 | Type | Class naming | What it covers |
 |---|---|---|
-| Unit test | `UserServiceTest` | Service logic in isolation (repository and password encoder mocked) |
-| Controller slice test | `UserControllerWebMvcTest` | Controller layer, validation, and error responses (`@WebMvcTest`, service mocked) |
-| Integration test | `UserControllerTest` | Full flow from controller to the `contact_management_test` database |
+| Unit test | `UserServiceTest`, `AuthServiceTest` | Service logic in isolation (repository, password encoder and clock mocked) |
+| Controller slice test | `UserControllerWebMvcTest`, `AuthControllerWebMvcTest` | Controller layer, validation, and error responses (`@WebMvcTest`, service mocked) |
+| Integration test | `UserControllerTest`, `AuthControllerTest` | Full flow from controller to the `contact_management_test` database |
+
+`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header.
 
 Integration tests use the `test` profile. Make sure the `contact_management_test` database exists and the credentials used by the test profile are valid.
 
@@ -130,7 +132,7 @@ Error:
 
 | Field | Description |
 |---|---|
-| `errors.code` | HTTP status (for example `409 CONFLICT`), or `VALIDATION_ERROR` for validation failures |
+| `errors.code` | HTTP status (for example `409 CONFLICT`, `401 UNAUTHORIZED`), or `VALIDATION_ERROR` for validation failures |
 | `errors.message` | Human-readable message |
 | `errors.details` | Per-field problems. Only present for validation errors |
 
@@ -219,13 +221,104 @@ curl -X POST http://localhost:8080/api/users \
   -d '{"username":"johndoe","password":"secretpassword","name":"John Doe"}'
 ```
 
+### Login User
+
+Authenticates a user and returns an API token.
+
+- **Method:** `POST`
+- **URL:** `/api/auth/login`
+- **Headers:** `Content-Type: application/json`, `Accept: application/json`
+
+**Request body**
+
+```json
+{
+  "username": "johndoe",
+  "password": "secretpassword"
+}
+```
+
+| Field | Required | Rules |
+|---|---|---|
+| `username` | Yes | Must not be blank. Max 100 characters |
+| `password` | Yes | Must not be blank. Max 72 bytes in UTF-8 (BCrypt limit) |
+
+**Responses**
+
+`200 OK`
+
+```json
+{
+  "data": {
+    "token": "7d3c5a9e-1b2f-4c6d-8e0a-9f1b2c3d4e5f",
+    "tokenExpiredAt": 1893456000000
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `token` | Random UUID. Valid for 30 days. Each login replaces the user's previous token |
+| `tokenExpiredAt` | Expiry time of the token, in epoch milliseconds |
+
+`400 Bad Request` (validation failed)
+
+```json
+{
+  "errors": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "username",
+        "message": "must not be blank"
+      }
+    ]
+  }
+}
+```
+
+`400 Bad Request` (missing or malformed JSON body)
+
+```json
+{
+  "errors": {
+    "code": "400 BAD_REQUEST",
+    "message": "Request body is missing or malformed"
+  }
+}
+```
+
+`401 Unauthorized` (unknown username or wrong password, same response for both)
+
+```json
+{
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Username or password wrong"
+  }
+}
+```
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"username":"johndoe","password":"secretpassword"}'
+```
+
+### Authentication token
+
+Login issues a token that clients are meant to send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented (`UserArgumentResolver`) but is not used by any implemented endpoint yet. Full Spring Security integration is planned.
+
 ### Planned endpoints
 
 These endpoints are not implemented yet.
 
 | Module | Method | URL |
 |---|---|---|
-| Auth | `POST` | `/api/auth/login` |
 | Auth | `DELETE` | `/api/auth/logout` |
 | User | `GET` | `/api/users/current` |
 | User | `PATCH` | `/api/users/current` |
@@ -240,8 +333,6 @@ These endpoints are not implemented yet.
 | Address | `PUT` | `/api/contacts/{contactId}/addresses/{addressId}` |
 | Address | `DELETE` | `/api/contacts/{contactId}/addresses/{addressId}` |
 
-Authentication will use token-based access (`X-API-TOKEN` header). Full Spring Security integration is planned.
-
 ## Project Structure
 
 The code is organized by layer.
@@ -255,16 +346,21 @@ contact-management-java/
     │   ├── java/com/yogaharis/contactmanagement/
     │   │   ├── ContactManagementJavaApplication.java
     │   │   ├── config/
-    │   │   │   └── PasswordEncoderConfig.java
+    │   │   │   ├── ClockConfig.java
+    │   │   │   ├── PasswordEncoderConfig.java
+    │   │   │   └── WebMvcConfig.java
     │   │   ├── constraint/
     │   │   │   ├── MaxBytes.java
     │   │   │   └── MaxBytesValidator.java
     │   │   ├── controller/
+    │   │   │   ├── AuthController.java
     │   │   │   └── UserController.java
     │   │   ├── dto/
     │   │   │   ├── ErrorDetail.java
     │   │   │   ├── ErrorResponse.java
+    │   │   │   ├── LoginUserRequest.java
     │   │   │   ├── RegisterUserRequest.java
+    │   │   │   ├── TokenResponse.java
     │   │   │   ├── UserResponse.java
     │   │   │   └── WebResponse.java
     │   │   ├── entity/
@@ -273,18 +369,28 @@ contact-management-java/
     │   │   │   └── GlobalExceptionHandler.java
     │   │   ├── repository/
     │   │   │   └── UserRepository.java
+    │   │   ├── resolver/
+    │   │   │   └── UserArgumentResolver.java
     │   │   └── service/
+    │   │       ├── AuthService.java
     │   │       └── UserService.java
     │   └── resources/
     │       ├── application.properties
     │       └── db/migration/
-    │           └── V1__create_user_table.sql
+    │           ├── V1__create_user_table.sql
+    │           ├── V2__add_token_to_user.sql
+    │           └── V3__rename_token_unique_index.sql
     └── test/
         ├── java/com/yogaharis/contactmanagement/
         │   ├── controller/
+        │   │   ├── AuthControllerTest.java
+        │   │   ├── AuthControllerWebMvcTest.java
         │   │   ├── UserControllerTest.java
         │   │   └── UserControllerWebMvcTest.java
+        │   ├── resolver/
+        │   │   └── UserArgumentResolverTest.java
         │   └── service/
+        │       ├── AuthServiceTest.java
         │       └── UserServiceTest.java
         └── resources/
             └── application-test.properties

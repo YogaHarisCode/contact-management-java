@@ -86,8 +86,9 @@ Authenticate user and receive an authentication token.
 #### Success (200 OK)
 ```json
 {
-  "data": {
-    "token": "3c829e12-4217-48f5-a169-715a31bc0d6d"
+  "data" : {
+    "token" : "TOKEN",
+    "expiredAt" : 2342342423423
   }
 }
 ```
