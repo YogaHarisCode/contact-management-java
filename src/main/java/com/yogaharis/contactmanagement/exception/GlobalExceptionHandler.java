@@ -65,9 +65,9 @@ public class GlobalExceptionHandler {
                         .build()
                 )
                 .toList();
-        // Log only the field name and constraint message, never the rejected value (it may be a password).
-        log.warn("Request validation failed: target={}, errors=[{}]",
-                errorDetails.getFirst().getField(), errorDetails.getFirst().getMessage());
+
+        List<String> invalidFields = errorDetails.stream().map(ErrorDetail::getField).toList();
+        log.warn("Request validation failed: violationCount={}, fields={}", errorDetails.size(), invalidFields);
 
         return buildError(
                 "VALIDATION_ERROR",
@@ -108,10 +108,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<WebResponse<Void>> handleUnexpectedException(Exception exception) {
         // Spring web exceptions (404, 405, 415, ...) already carry the right status, so keep it.
         if (exception instanceof org.springframework.web.ErrorResponse frameworkError) {
+            HttpStatusCode status = frameworkError.getStatusCode();
+            if (status.is5xxServerError()) {
+                log.error("Framework error: status={}, exceptionType={}",
+                        status.value(), exception.getClass().getSimpleName(), exception);
+            } else {
+                log.debug("Framework rejected request: status={}, exceptionType={}",
+                        status.value(), exception.getClass().getSimpleName());
+            }
             return buildError(frameworkError.getStatusCode().toString(), frameworkError.getBody().getDetail(), null, frameworkError.getStatusCode());
         }
 
-        // Anything else is a server fault: return a generic message so internals are not leaked.
+        // Anything else is a server fault: keep the stack trace in the log, but return a generic message to the client.
+        log.error("Unexpected error: exceptionType={}", exception.getClass().getSimpleName(), exception);
         return buildError(HttpStatus.INTERNAL_SERVER_ERROR.toString(), "Unexpected error occurred", null, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 

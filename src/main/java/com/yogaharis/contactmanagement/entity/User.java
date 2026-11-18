@@ -2,6 +2,7 @@ package com.yogaharis.contactmanagement.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.DynamicUpdate;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Persistable;
 
@@ -12,6 +13,11 @@ import org.springframework.data.domain.Persistable;
  * The entity implements {@link Persistable} so Spring Data can tell a new user
  * from an existing one without relying on a null ID.</p>
  *
+ * <p>Login state lives on the same row: {@code token} and {@code tokenExpiredAt} hold the
+ * user's current API token and its expiry. The entity is annotated with {@link DynamicUpdate}
+ * so Hibernate updates only the changed columns, and a login never overwrites other columns
+ * with stale values.</p>
+ *
  * @author Yoga Harisistianugroho
  */
 @Getter
@@ -19,6 +25,7 @@ import org.springframework.data.domain.Persistable;
 @NoArgsConstructor
 @Entity
 @Table(name = "users")
+@DynamicUpdate
 public class User implements Persistable<String> {
 
     /** Unique login name of the user. Also the primary key (max 100 characters). */
@@ -33,6 +40,21 @@ public class User implements Persistable<String> {
     /** Display name of the user (max 100 characters). */
     @Column(length = 100, nullable = false)
     private String name;
+
+    /**
+     * Current API token issued at login (a UUID string, max 100 characters).
+     * Unique across users and {@code null} until the first successful login.
+     * Each successful login replaces the previous value.
+     */
+    @Column(length = 100, unique = true)
+    private String token;
+
+    /**
+     * Expiry time of {@code token} as epoch milliseconds.
+     * {@code null} until the first successful login.
+     */
+    @Column(name = "token_expired_at")
+    private Long tokenExpiredAt;
 
     /**
      * Not persisted. {@code true} until the entity has been saved or loaded.
