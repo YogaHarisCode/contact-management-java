@@ -75,6 +75,21 @@ public class UserService {
     }
 
     /**
+     * Returns the public data of the authenticated user.
+     *
+     * <p>The user is already authenticated and loaded by {@code UserArgumentResolver}, so this
+     * method only maps it to a response and does not access the database.</p>
+     *
+     * @param user the authenticated user
+     * @return the user's public data (username and name, never the password or token)
+     */
+    public UserResponse get(User user){
+        log.debug("Get current user: username={}", user.getUsername());
+
+        return toUserResponse(user);
+    }
+
+    /**
      * Builds a {@link ResponseStatusException} with the given status and message.
      *
      * @param statusCode the HTTP status to respond with

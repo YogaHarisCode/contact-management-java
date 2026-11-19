@@ -3,14 +3,12 @@ package com.yogaharis.contactmanagement.controller;
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
+import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller for user endpoints, mounted at {@code /api/users}.
@@ -40,6 +38,26 @@ public class UserController {
     )
     public WebResponse<UserResponse> register(@Valid @RequestBody RegisterUserRequest request){
         UserResponse response = userService.register(request);
+        return WebResponse.<UserResponse>builder().data(response).build();
+    }
+
+    /**
+     * Returns the profile of the authenticated user ({@code GET /api/users/current}).
+     *
+     * <p>The {@code user} parameter is not read from the request body. It is resolved from the
+     * {@code X-API-TOKEN} header by {@code UserArgumentResolver}, which rejects the request with
+     * {@code 401 UNAUTHORIZED} before this method runs if the header is missing or blank, the token
+     * is unknown, or the token has expired.</p>
+     *
+     * @param user the authenticated user, supplied by {@code UserArgumentResolver}
+     * @return a {@link WebResponse} whose {@code data} holds the user's username and name
+     */
+    @GetMapping(
+            path = "/current",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<UserResponse> get(User user){
+        UserResponse response = userService.get(user);
         return WebResponse.<UserResponse>builder().data(response).build();
     }
 }

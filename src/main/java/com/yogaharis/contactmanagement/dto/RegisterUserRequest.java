@@ -30,11 +30,13 @@ public class RegisterUserRequest {
     private String username;
 
     /**
-     * Raw password. Required and at most 72 bytes in UTF-8, which is the BCrypt
-     * input limit. It is hashed before storage and never returned in a response.
+     * Raw password. Required, at least 8 characters, and at most 72 bytes in UTF-8,
+     * which is the BCrypt input limit. It is hashed before storage and never returned
+     * in a response.
      */
     @NotBlank
     @MaxBytes(72)
+    @Size(min = 8)
     private String password;
 
     /** Display name of the user. Required and at most 100 characters. */

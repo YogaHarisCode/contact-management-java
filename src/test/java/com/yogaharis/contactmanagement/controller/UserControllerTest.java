@@ -21,13 +21,16 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for the user endpoints, running the full application context
- * against the {@code contact_management_test} database.
+ * Integration tests for the user endpoints (register and get current user), running the full
+ * application context against the {@code contact_management_test} database.
  *
  * @author Yoga Harisistianugroho
  */
@@ -48,7 +51,11 @@ public class UserControllerTest {
     private static final String USERNAME = "JhonDoe";
     private static final String RAW_PASSWORD = "Rahasia123";
     private static final String NAME = "Jhon Doe";
+    private static final String VALID_TOKEN = "Valid-Token";
+    private static final String INVALID_TOKEN = "Invalid-Token";
+    private static final String HEADER = "X-API-TOKEN";
 
+    // The users table is emptied before and after every test so tests stay independent.
     @BeforeEach
     void setUp() {
         userRepository.deleteAll();
@@ -135,11 +142,142 @@ public class UserControllerTest {
         assertNotNull(response.getErrors());
         assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
         assertEquals("Request validation failed", response.getErrors().getMessage());
-        assertEquals(invalidField, response.getErrors().getDetails().getFirst().getField());
-        assertEquals(invalidMessage, response.getErrors().getDetails().getFirst().getMessage());
+        // anyMatch: one invalid value can violate several rules at once (e.g. blank and too short).
+        assertTrue(
+                response.getErrors().getDetails().stream()
+                        .anyMatch(detail ->
+                                detail.getField().equals(invalidField)
+                                        && detail.getMessage().equals(invalidMessage)
+                        )
+        );
+    }
+
+    // ---------------------------------------------------------- GET
+
+    /** The user is saved directly in the database with a known token, bypassing register and login. */
+    @Test
+    void testGetCurrentUserSuccess() {
+        User user = registeredUser();
+
+        WebResponse<UserResponse> response = getCurrent(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+
+        assertNull(response.getErrors());
+
+        assertNotNull(response.getData());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+        assertEquals(user.getName(), response.getData().getName());
+    }
+
+    /** With two users stored, each token must return its own owner and never another user's data. */
+    @Test
+    void testGetCurrentUserReturnsOwnerOfToken() {
+        registeredUser();
+        registeredUser("AnotherUser", "Another User", "Another-Token", Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        WebResponse<UserResponse> response = getCurrent("Another-Token")
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+
+        assertNull(response.getErrors());
+
+        assertNotNull(response.getData());
+        assertEquals("AnotherUser", response.getData().getUsername());
+        assertEquals("Another User", response.getData().getName());
+    }
+
+    /** End-to-end flow with a real token: register, login, then get current user. */
+    @Test
+    void testGetCurrentUserAfterRegisterAndLogin() {
+        post(validRegisterRequest()).expectStatus().isOk();
+
+        String token = login(USERNAME, RAW_PASSWORD);
+
+        WebResponse<UserResponse> response = getCurrent(token)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+
+        assertNull(response.getErrors());
+
+        assertNotNull(response.getData());
+        assertEquals(USERNAME, response.getData().getUsername());
+        assertEquals(NAME, response.getData().getName());
+    }
+
+    /** A user has one token at a time: logging in again invalidates the previous token. */
+    @Test
+    void testGetCurrentUserOldTokenAfterRelogin() {
+        post(validRegisterRequest()).expectStatus().isOk();
+
+        String oldToken = login(USERNAME, RAW_PASSWORD);
+        String newToken = login(USERNAME, RAW_PASSWORD);
+
+        assertNotEquals(oldToken, newToken);
+
+        assertUnauthorized(getCurrent(oldToken));
+        getCurrent(newToken).expectStatus().isOk();
+    }
+
+    @Test
+    void testGetCurrentUserMissingHeader() {
+        assertUnauthorized(getCurrent(null));
+    }
+
+    @Test
+    void testGetCurrentUserTokenNotFound() {
+        registeredUser();
+
+        assertUnauthorized(getCurrent(INVALID_TOKEN));
+    }
+
+    @Test
+    void testGetCurrentUserTokenExpired() {
+        registeredUser(USERNAME, NAME, VALID_TOKEN, Instant.now().minus(Duration.ofSeconds(1)).toEpochMilli());
+
+        assertUnauthorized(getCurrent(VALID_TOKEN));
+    }
+
+    /** A stored token without an expiry time is treated as invalid. */
+    @Test
+    void testGetCurrentUserNullTokenExpiredAt() {
+        registeredUser(USERNAME, NAME, VALID_TOKEN, null);
+
+        assertUnauthorized(getCurrent(VALID_TOKEN));
     }
 
     // ---------------------------------------------------------- HELPER
+
+    /** Saves {@code USERNAME} directly in the database with {@code VALID_TOKEN}, valid for one day. */
+    private User registeredUser(){
+        return registeredUser(USERNAME, NAME, VALID_TOKEN, Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+    }
+
+    /** Saves a user directly in the database with the given token and expiry. The password is a dummy hash. */
+    private User registeredUser(String username, String name, String token, Long tokenExpiredAt){
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("hash-password");
+        user.setName(name);
+        user.setToken(token);
+        user.setTokenExpiredAt(tokenExpiredAt);
+        return userRepository.save(user);
+    }
 
     private static Stream<Arguments> invalidRegisterRequests() {
         String over100Chars = "a".repeat(101);
@@ -196,5 +334,57 @@ public class UserControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .exchange();
+    }
+
+    /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */
+    private RestTestClient.ResponseSpec getCurrent(String token){
+        return client.get()
+                .uri("/api/users/current")
+                .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.set(HEADER, token);
+                    }
+                })
+                .exchange();
+    }
+
+    /** Logs in through the real endpoint and returns the issued token. Uses a {@code Map} body and response so the test does not depend on the login DTOs. */
+    private String login(String username, String password){
+        WebResponse<Map<String, Object>> response = client.post()
+                .uri("/api/auth/login")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("username", username, "password", password))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Map<String, Object>>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNotNull(response.getData());
+
+        return (String) response.getData().get("token");
+    }
+
+    /** Asserts a {@code 401 UNAUTHORIZED} response with the standard error body and no validation details. */
+    private void assertUnauthorized(RestTestClient.ResponseSpec spec){
+        WebResponse<Void> response = spec
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+
+        assertNull(response.getData());
+
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
+        assertEquals("Unauthorized", response.getErrors().getMessage());
+        assertNull(response.getErrors().getDetails());
     }
 }
