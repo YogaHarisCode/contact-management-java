@@ -3,14 +3,12 @@ package com.yogaharis.contactmanagement.controller;
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
+import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller for user endpoints, mounted at {@code /api/users}.
@@ -40,6 +38,15 @@ public class UserController {
     )
     public WebResponse<UserResponse> register(@Valid @RequestBody RegisterUserRequest request){
         UserResponse response = userService.register(request);
+        return WebResponse.<UserResponse>builder().data(response).build();
+    }
+
+    @GetMapping(
+            path = "/current",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<UserResponse> get(User user){
+        UserResponse response = userService.get(user);
         return WebResponse.<UserResponse>builder().data(response).build();
     }
 }

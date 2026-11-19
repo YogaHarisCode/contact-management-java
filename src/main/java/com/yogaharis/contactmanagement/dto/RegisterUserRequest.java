@@ -35,6 +35,7 @@ public class RegisterUserRequest {
      */
     @NotBlank
     @MaxBytes(72)
+    @Size(min = 8)
     private String password;
 
     /** Display name of the user. Required and at most 100 characters. */

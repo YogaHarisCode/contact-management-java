@@ -91,6 +91,22 @@ class UserServiceTest {
         Mockito.verify(userRepository, Mockito.never()).saveAndFlush(Mockito.any(User.class));
     }
 
+    // ---------------------------------------------------------- GET
+    @Test
+    void testGetCurrentUserSuccess() {
+        User user = new User();
+        user.setUsername(USERNAME);
+        user.setPassword(HASH_PASSWORD);
+        user.setName(NAME);
+
+        UserResponse response = userService.get(user);
+
+        assertEquals(USERNAME, response.getUsername());
+        assertEquals(NAME, response.getName());
+
+        Mockito.verifyNoInteractions(userRepository, passwordEncoder);
+    }
+
     // ---------------------------------------------------------- HELPER
     private RegisterUserRequest validRequest(){
         return RegisterUserRequest.builder()

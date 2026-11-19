@@ -74,6 +74,10 @@ public class UserService {
         return toUserResponse(user);
     }
 
+    public UserResponse get(User user){
+        return toUserResponse(user);
+    }
+
     /**
      * Builds a {@link ResponseStatusException} with the given status and message.
      *
