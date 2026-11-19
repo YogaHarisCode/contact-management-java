@@ -75,6 +75,8 @@ public class UserService {
     }
 
     public UserResponse get(User user){
+        log.debug("Get current user: username={}", user.getUsername());
+
         return toUserResponse(user);
     }
 
