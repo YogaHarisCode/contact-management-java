@@ -41,6 +41,17 @@ public class UserController {
         return WebResponse.<UserResponse>builder().data(response).build();
     }
 
+    /**
+     * Returns the profile of the authenticated user ({@code GET /api/users/current}).
+     *
+     * <p>The {@code user} parameter is not read from the request body. It is resolved from the
+     * {@code X-API-TOKEN} header by {@code UserArgumentResolver}, which rejects the request with
+     * {@code 401 UNAUTHORIZED} before this method runs if the header is missing or blank, the token
+     * is unknown, or the token has expired.</p>
+     *
+     * @param user the authenticated user, supplied by {@code UserArgumentResolver}
+     * @return a {@link WebResponse} whose {@code data} holds the user's username and name
+     */
     @GetMapping(
             path = "/current",
             produces = MediaType.APPLICATION_JSON_VALUE

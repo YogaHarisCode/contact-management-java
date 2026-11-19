@@ -15,8 +15,8 @@ import org.springframework.web.server.ResponseStatusException;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link UserService}. The repository and password encoder are mocked,
- * so no Spring context or database is involved.
+ * Unit tests for {@link UserService} (register and get current user). The repository and
+ * password encoder are mocked, so no Spring context or database is involved.
  *
  * @author Yoga Harisistianugroho
  */
@@ -44,7 +44,7 @@ class UserServiceTest {
         RegisterUserRequest request = validRequest();
 
         Mockito.when(userRepository.existsById(USERNAME))
-                        .thenReturn(false);
+                .thenReturn(false);
         Mockito.when(passwordEncoder.encode(RAW_PASSWORD))
                 .thenReturn(HASH_PASSWORD);
         Mockito.when(userRepository.saveAndFlush(Mockito.any(User.class)))
@@ -92,6 +92,10 @@ class UserServiceTest {
     }
 
     // ---------------------------------------------------------- GET
+    /**
+     * The user arrives already authenticated, so the service must only map it to a response
+     * and must not touch the repository or the password encoder.
+     */
     @Test
     void testGetCurrentUserSuccess() {
         User user = new User();

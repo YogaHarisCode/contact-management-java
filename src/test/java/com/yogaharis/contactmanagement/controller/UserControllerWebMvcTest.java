@@ -34,6 +34,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * Controller slice tests for {@link UserController} using {@code @WebMvcTest}.
  * The service layer is mocked; validation and error responses are verified over HTTP.
  *
+ * <p>Get current user is tested through the real {@code UserArgumentResolver}, which looks the
+ * user up by token in the mocked {@link UserRepository}.</p>
+ *
  * @author Yoga Harisistianugroho
  */
 @WebMvcTest(UserController.class)
@@ -46,6 +49,7 @@ public class UserControllerWebMvcTest {
     @MockitoBean
     private UserService userService;
 
+    // Needed because the slice also loads UserArgumentResolver, which finds users by token.
     @MockitoBean
     private UserRepository userRepository;
 
@@ -106,6 +110,7 @@ public class UserControllerWebMvcTest {
         assertNotNull(response.getErrors());
         assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
         assertEquals("Request validation failed", response.getErrors().getMessage());
+        // anyMatch: one invalid value can violate several rules at once (e.g. blank and too short).
         assertTrue(
                 response.getErrors().getDetails().stream()
                         .anyMatch(detail ->
@@ -148,6 +153,7 @@ public class UserControllerWebMvcTest {
     }
 
     // ---------------------------------------------------------- GET
+    /** The resolver finds the user by token in the mocked repository and passes it to the service. */
     @Test
     void testGetCurrentUserSuccess() {
         User user = registeredUser();
@@ -177,6 +183,7 @@ public class UserControllerWebMvcTest {
         Mockito.verify(userService).get(user);
     }
 
+    /** Checks the raw JSON, since the deserialized DTO could not show extra or leaked fields. */
     @Test
     void testGetCurrentUserDoesNotExposeSensitiveFields() {
         User user = registeredUser();
@@ -205,6 +212,7 @@ public class UserControllerWebMvcTest {
         Mockito.verifyNoInteractions(userRepository, userService);
     }
 
+    /** An empty or whitespace-only header is rejected like a missing one, without a database lookup. */
     @ParameterizedTest(name = "token = [{0}]")
     @ValueSource(strings = {"", "   "})
     void testGetCurrentUserBlankToken(String token) {
@@ -237,6 +245,7 @@ public class UserControllerWebMvcTest {
         Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
     }
 
+    /** A token without an expiry time is treated as invalid. */
     @Test
     void testGetCurrentUserNullTokenExpiredAt() {
         User user = registeredUser(null);
@@ -250,6 +259,7 @@ public class UserControllerWebMvcTest {
         Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
     }
 
+    /** {@code /api/users/current} only maps GET, so POST must be rejected before any lookup. */
     @Test
     void testGetCurrentUserMethodNotAllowed() {
         WebResponse<Void> response = client.post()
@@ -274,6 +284,7 @@ public class UserControllerWebMvcTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */
     private RestTestClient.ResponseSpec getCurrent(String token){
         return client.get()
                 .uri("/api/users/current")
@@ -286,6 +297,7 @@ public class UserControllerWebMvcTest {
                 .exchange();
     }
 
+    /** Asserts a {@code 401 UNAUTHORIZED} response with the standard error body and no validation details. */
     private void assertUnauthorized(RestTestClient.ResponseSpec spec){
         WebResponse<Void> response = spec
                 .expectStatus().isUnauthorized()
@@ -304,10 +316,12 @@ public class UserControllerWebMvcTest {
         assertNull(response.getErrors().getDetails());
     }
 
+    /** Builds an in-memory user (not persisted) holding {@code VALID_TOKEN}, valid for one hour. */
     private User registeredUser(){
         return registeredUser(Instant.now().plus(Duration.ofHours(1)).toEpochMilli());
     }
 
+    /** Builds an in-memory user (not persisted) holding {@code VALID_TOKEN} with the given expiry. */
     private User registeredUser(Long tokenExpiredAt){
         User user = new User();
         user.setUsername(USERNAME);

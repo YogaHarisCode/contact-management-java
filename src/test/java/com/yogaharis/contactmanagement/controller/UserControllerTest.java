@@ -29,8 +29,8 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for the user endpoints, running the full application context
- * against the {@code contact_management_test} database.
+ * Integration tests for the user endpoints (register and get current user), running the full
+ * application context against the {@code contact_management_test} database.
  *
  * @author Yoga Harisistianugroho
  */
@@ -55,6 +55,7 @@ public class UserControllerTest {
     private static final String INVALID_TOKEN = "Invalid-Token";
     private static final String HEADER = "X-API-TOKEN";
 
+    // The users table is emptied before and after every test so tests stay independent.
     @BeforeEach
     void setUp() {
         userRepository.deleteAll();
@@ -141,6 +142,7 @@ public class UserControllerTest {
         assertNotNull(response.getErrors());
         assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
         assertEquals("Request validation failed", response.getErrors().getMessage());
+        // anyMatch: one invalid value can violate several rules at once (e.g. blank and too short).
         assertTrue(
                 response.getErrors().getDetails().stream()
                         .anyMatch(detail ->
@@ -152,6 +154,7 @@ public class UserControllerTest {
 
     // ---------------------------------------------------------- GET
 
+    /** The user is saved directly in the database with a known token, bypassing register and login. */
     @Test
     void testGetCurrentUserSuccess() {
         User user = registeredUser();
@@ -172,6 +175,7 @@ public class UserControllerTest {
         assertEquals(user.getName(), response.getData().getName());
     }
 
+    /** With two users stored, each token must return its own owner and never another user's data. */
     @Test
     void testGetCurrentUserReturnsOwnerOfToken() {
         registeredUser();
@@ -193,6 +197,7 @@ public class UserControllerTest {
         assertEquals("Another User", response.getData().getName());
     }
 
+    /** End-to-end flow with a real token: register, login, then get current user. */
     @Test
     void testGetCurrentUserAfterRegisterAndLogin() {
         post(validRegisterRequest()).expectStatus().isOk();
@@ -215,6 +220,7 @@ public class UserControllerTest {
         assertEquals(NAME, response.getData().getName());
     }
 
+    /** A user has one token at a time: logging in again invalidates the previous token. */
     @Test
     void testGetCurrentUserOldTokenAfterRelogin() {
         post(validRegisterRequest()).expectStatus().isOk();
@@ -247,6 +253,7 @@ public class UserControllerTest {
         assertUnauthorized(getCurrent(VALID_TOKEN));
     }
 
+    /** A stored token without an expiry time is treated as invalid. */
     @Test
     void testGetCurrentUserNullTokenExpiredAt() {
         registeredUser(USERNAME, NAME, VALID_TOKEN, null);
@@ -256,10 +263,12 @@ public class UserControllerTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /** Saves {@code USERNAME} directly in the database with {@code VALID_TOKEN}, valid for one day. */
     private User registeredUser(){
         return registeredUser(USERNAME, NAME, VALID_TOKEN, Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
     }
 
+    /** Saves a user directly in the database with the given token and expiry. The password is a dummy hash. */
     private User registeredUser(String username, String name, String token, Long tokenExpiredAt){
         User user = new User();
         user.setUsername(username);
@@ -327,6 +336,7 @@ public class UserControllerTest {
                 .exchange();
     }
 
+    /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */
     private RestTestClient.ResponseSpec getCurrent(String token){
         return client.get()
                 .uri("/api/users/current")
@@ -339,6 +349,7 @@ public class UserControllerTest {
                 .exchange();
     }
 
+    /** Logs in through the real endpoint and returns the issued token. Uses a {@code Map} body and response so the test does not depend on the login DTOs. */
     private String login(String username, String password){
         WebResponse<Map<String, Object>> response = client.post()
                 .uri("/api/auth/login")
@@ -358,6 +369,7 @@ public class UserControllerTest {
         return (String) response.getData().get("token");
     }
 
+    /** Asserts a {@code 401 UNAUTHORIZED} response with the standard error body and no validation details. */
     private void assertUnauthorized(RestTestClient.ResponseSpec spec){
         WebResponse<Void> response = spec
                 .expectStatus().isUnauthorized()

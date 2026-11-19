@@ -2,7 +2,7 @@
 
 A REST API backend for managing users, contacts, and addresses, built with Java and Spring Boot.
 
-This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration and login are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
+This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration, login, and get current user are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
 
 ## Tech Stack
 
@@ -100,7 +100,7 @@ The project uses three kinds of tests for every feature:
 | Controller slice test | `UserControllerWebMvcTest`, `AuthControllerWebMvcTest` | Controller layer, validation, and error responses (`@WebMvcTest`, service mocked) |
 | Integration test | `UserControllerTest`, `AuthControllerTest` | Full flow from controller to the `contact_management_test` database |
 
-`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header.
+`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header. The same component is also exercised over HTTP by the get current user tests in `UserControllerWebMvcTest` and `UserControllerTest`.
 
 Integration tests use the `test` profile. Make sure the `contact_management_test` database exists and the credentials used by the test profile are valid.
 
@@ -157,7 +157,7 @@ Registers a new user.
 | Field | Required | Rules |
 |---|---|---|
 | `username` | Yes | Max 100 characters. Letters, digits, `.`, `_`, `-` only |
-| `password` | Yes | Max 72 bytes in UTF-8 (BCrypt limit) |
+| `password` | Yes | At least 8 characters. Max 72 bytes in UTF-8 (BCrypt limit) |
 | `name` | Yes | Max 100 characters |
 
 **Responses**
@@ -309,9 +309,49 @@ curl -X POST http://localhost:8080/api/auth/login \
   -d '{"username":"johndoe","password":"secretpassword"}'
 ```
 
+### Get Current User
+
+Returns the profile of the user that owns the token.
+
+- **Method:** `GET`
+- **URL:** `/api/users/current`
+- **Headers:** `X-API-TOKEN: <token>`, `Accept: application/json`
+
+**Responses**
+
+`200 OK`
+
+```json
+{
+  "data": {
+    "username": "johndoe",
+    "name": "John Doe"
+  }
+}
+```
+
+`401 Unauthorized` (header missing or blank, token unknown, or token expired)
+
+```json
+{
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
+}
+```
+
+**Example**
+
+```bash
+curl http://localhost:8080/api/users/current \
+  -H "X-API-TOKEN: <token>" \
+  -H "Accept: application/json"
+```
+
 ### Authentication token
 
-Login issues a token that clients are meant to send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented (`UserArgumentResolver`) but is not used by any implemented endpoint yet. Full Spring Security integration is planned.
+Login issues a token that clients send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented in `UserArgumentResolver`: any controller method that declares a `User` parameter is authenticated automatically. Currently only `GET /api/users/current` uses it. Full Spring Security integration is planned.
 
 ### Planned endpoints
 
@@ -320,7 +360,6 @@ These endpoints are not implemented yet.
 | Module | Method | URL |
 |---|---|---|
 | Auth | `DELETE` | `/api/auth/logout` |
-| User | `GET` | `/api/users/current` |
 | User | `PATCH` | `/api/users/current` |
 | Contact | `POST` | `/api/contacts` |
 | Contact | `GET` | `/api/contacts` (search with pagination) |
