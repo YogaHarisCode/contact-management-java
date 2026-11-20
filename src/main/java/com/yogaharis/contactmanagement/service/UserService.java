@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.service;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
@@ -13,6 +14,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Objects;
 
 /**
  * Business logic for user management.
@@ -87,6 +90,23 @@ public class UserService {
         log.debug("Get current user: username={}", user.getUsername());
 
         return toUserResponse(user);
+    }
+
+    @Transactional
+    public UserResponse update(User user, UpdateUserRequest request){
+        if (Objects.isNull(request.getName()) && Objects.isNull(request.getPassword())){
+            return toUserResponse(user);
+        }
+
+        if (Objects.nonNull(request.getName())){
+            user.setName(request.getName());
+        }
+
+        if (Objects.nonNull(request.getPassword())){
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        return toUserResponse(userRepository.save(user));
     }
 
     /**

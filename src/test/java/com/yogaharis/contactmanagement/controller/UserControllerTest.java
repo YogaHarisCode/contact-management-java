@@ -1,8 +1,6 @@
 package com.yogaharis.contactmanagement.controller;
 
-import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
-import com.yogaharis.contactmanagement.dto.UserResponse;
-import com.yogaharis.contactmanagement.dto.WebResponse;
+import com.yogaharis.contactmanagement.dto.*;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -24,6 +22,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -260,6 +259,248 @@ public class UserControllerTest {
 
         assertUnauthorized(getCurrent(VALID_TOKEN));
     }
+
+    // ---------------------------------------------------------- UPDATE
+    @Test
+    void testUpdateUserNameOnlySuccess() {
+        // arrange
+        String token = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(token);
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+        userRepository.save(user);
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .build();
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+        assertEquals(request.getName(), response.getData().getName());
+
+        User userDb = userRepository.findById(user.getUsername()).orElse(null);
+
+        assertNotNull(userDb);
+        assertEquals(request.getName(), userDb.getName());
+        assertNotEquals(user.getName(), userDb.getName());
+        assertEquals(user.getPassword(), userDb.getPassword());
+        assertEquals(user.getToken(), userDb.getToken());
+        assertEquals(user.getTokenExpiredAt(), userDb.getTokenExpiredAt());
+    }
+
+    @Test
+    void testUpdateUserPasswordOnlySuccess() {
+        // arrange
+        String token = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(token);
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+        userRepository.save(user);
+
+        UpdateUserRequest requestUpdate = UpdateUserRequest.builder()
+                .password("NewPassword")
+                .build();
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(requestUpdate)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+
+        LoginUserRequest requestLogin = LoginUserRequest.builder()
+                .username(user.getUsername())
+                .password(requestUpdate.getPassword())
+                .build();
+
+        WebResponse<TokenResponse> responseLogin = client.post()
+                .uri("/api/auth/login")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(requestLogin)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<TokenResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        User userLogin = userRepository.findById(user.getUsername()).orElse(null);
+
+        assertNotNull(responseLogin);
+        assertNull(responseLogin.getErrors());
+        assertNotNull(responseLogin.getData());
+
+        assertNotNull(userLogin);
+        assertEquals(userLogin.getToken(), responseLogin.getData().getToken());
+        assertNotEquals(user.getToken(), userLogin.getToken());
+        assertNotEquals(user.getToken(), responseLogin.getData().getToken());
+        assertEquals(userLogin.getTokenExpiredAt(), responseLogin.getData().getTokenExpiredAt());
+        assertNotEquals(user.getTokenExpiredAt(), userLogin.getTokenExpiredAt());
+        assertNotEquals(user.getTokenExpiredAt(), responseLogin.getData().getTokenExpiredAt());
+    }
+
+    @Test
+    void testUpdateUserBothFieldSuccess() {
+        // arrange
+        String token = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(token);
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+        userRepository.save(user);
+
+        UpdateUserRequest requestUpdate = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .password("NewPassword")
+                .build();
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(requestUpdate)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+        assertEquals(requestUpdate.getName(), response.getData().getName());
+
+        User userDb = userRepository.findById(user.getUsername()).orElse(null);
+
+        assertNotNull(userDb);
+        assertEquals(requestUpdate.getName(), userDb.getName());
+        assertNotEquals(user.getName(), userDb.getName());
+        assertTrue(passwordEncoder.matches(requestUpdate.getPassword(), userDb.getPassword()));
+        assertNotEquals(user.getPassword(), userDb.getPassword());
+        assertEquals(user.getToken(), userDb.getToken());
+        assertEquals(user.getTokenExpiredAt(), userDb.getTokenExpiredAt());
+
+        LoginUserRequest requestLogin = LoginUserRequest.builder()
+                .username(user.getUsername())
+                .password(requestUpdate.getPassword())
+                .build();
+
+        WebResponse<TokenResponse> responseLogin = client.post()
+                .uri("/api/auth/login")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(requestLogin)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<TokenResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        User userLogin = userRepository.findById(user.getUsername()).orElse(null);
+
+        assertNotNull(responseLogin);
+        assertNull(responseLogin.getErrors());
+        assertNotNull(responseLogin.getData());
+
+        assertNotNull(userLogin);
+        assertEquals(userLogin.getToken(), responseLogin.getData().getToken());
+        assertNotEquals(user.getToken(), userLogin.getToken());
+        assertNotEquals(user.getToken(), responseLogin.getData().getToken());
+        assertEquals(userLogin.getTokenExpiredAt(), responseLogin.getData().getTokenExpiredAt());
+        assertNotEquals(user.getTokenExpiredAt(), userLogin.getTokenExpiredAt());
+        assertNotEquals(user.getTokenExpiredAt(), responseLogin.getData().getTokenExpiredAt());
+    }
+
+    @Test
+    void testUpdateUserNoOpIntegration() {
+        // arrange
+        String token = UUID.randomUUID().toString();
+
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(token);
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+        userRepository.save(user);
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .build();
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+        assertEquals(user.getName(), response.getData().getName());
+
+        User userDb = userRepository.findById(user.getUsername()).orElse(null);
+
+        assertNotNull(userDb);
+        assertEquals(user.getName(), userDb.getName());
+        assertEquals(user.getPassword(), userDb.getPassword());
+        assertEquals(user.getToken(), userDb.getToken());
+        assertEquals(user.getTokenExpiredAt(), userDb.getTokenExpiredAt());
+    }
+
 
     // ---------------------------------------------------------- HELPER
 

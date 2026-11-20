@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.controller;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
 import com.yogaharis.contactmanagement.entity.User;
@@ -12,7 +13,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Controller slice tests for {@link UserController} using {@code @WebMvcTest}.
@@ -68,7 +69,7 @@ public class UserControllerWebMvcTest {
         // arrange
         RegisterUserRequest request = validRegisterRequest();
 
-        Mockito.when(userService.register(Mockito.any(RegisterUserRequest.class)))
+        when(userService.register(any(RegisterUserRequest.class)))
                 .thenAnswer(invocation -> {
                     RegisterUserRequest request1 = invocation.getArgument(0);
 
@@ -91,7 +92,7 @@ public class UserControllerWebMvcTest {
 
         // verify
         ArgumentCaptor<RegisterUserRequest> userArgumentCaptor = ArgumentCaptor.forClass(RegisterUserRequest.class);
-        Mockito.verify(userService).register(userArgumentCaptor.capture());
+        verify(userService).register(userArgumentCaptor.capture());
         assertEquals(request, userArgumentCaptor.getValue());
     }
 
@@ -121,15 +122,15 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getData());
 
-        Mockito.verify(userService, Mockito.never())
-                .register(Mockito.any(RegisterUserRequest.class));
+        verify(userService, never())
+                .register(any(RegisterUserRequest.class));
     }
 
     @Test
     void testRegisterDuplicateUsername() {
         RegisterUserRequest request = validRegisterRequest();
 
-        Mockito.when(userService.register(request))
+        when(userService.register(request))
                 .thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists"));
 
         WebResponse<Void> response = post(request)
@@ -147,7 +148,7 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getData());
 
-        Mockito.verify(userService)
+        verify(userService)
                 .register(request);
 
     }
@@ -158,10 +159,10 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserSuccess() {
         User user = registeredUser();
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
-        Mockito.when(userService.get(user))
+        when(userService.get(user))
                 .thenReturn(UserResponse.builder().username(user.getUsername()).name(user.getName()).build());
 
         WebResponse<UserResponse> response = getCurrent(VALID_TOKEN)
@@ -179,8 +180,8 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getErrors());
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService).get(user);
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService).get(user);
     }
 
     /** Checks the raw JSON, since the deserialized DTO could not show extra or leaked fields. */
@@ -188,10 +189,10 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserDoesNotExposeSensitiveFields() {
         User user = registeredUser();
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
-        Mockito.when(userService.get(user))
+        when(userService.get(user))
                 .thenReturn(UserResponse.builder().username(user.getUsername()).name(user.getName()).build());
 
         getCurrent(VALID_TOKEN)
@@ -209,7 +210,7 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserMissingToken() {
         assertUnauthorized(getCurrent(null));
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
     /** An empty or whitespace-only header is rejected like a missing one, without a database lookup. */
@@ -218,31 +219,31 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserBlankToken(String token) {
         assertUnauthorized(getCurrent(token));
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
     @Test
     void testGetCurrentUserInvalidToken() {
-        Mockito.when(userRepository.findByToken(INVALID_TOKEN))
+        when(userRepository.findByToken(INVALID_TOKEN))
                 .thenReturn(Optional.empty());
 
         assertUnauthorized(getCurrent(INVALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(INVALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(INVALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     @Test
     void testGetCurrentUserExpiredToken() {
         User user = registeredUser(Instant.now().minus(Duration.ofSeconds(1)).toEpochMilli());
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
         assertUnauthorized(getCurrent(VALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     /** A token without an expiry time is treated as invalid. */
@@ -250,13 +251,13 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserNullTokenExpiredAt() {
         User user = registeredUser(null);
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
         assertUnauthorized(getCurrent(VALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     /** {@code /api/users/current} only maps GET, so POST must be rejected before any lookup. */
@@ -279,10 +280,230 @@ public class UserControllerWebMvcTest {
         assertNotNull(response.getErrors());
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED.toString(), response.getErrors().getCode());
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
+    // ---------------------------------------------------------- UPDATE
+
+    @Test
+    void testUpdateUserSuccess() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .password("NewPassword")
+                .build();
+
+        when(userRepository.findByToken("Valid-Token"))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(user, request))
+                .thenReturn(UserResponse.builder().username(user.getUsername()).name(request.getName()).build());
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", "Valid-Token")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertNotNull(response.getData());
+        assertEquals(user.getUsername(), response.getData().getUsername());
+        assertNotEquals(user.getName(), response.getData().getName());
+        assertEquals(request.getName(), response.getData().getName());
+
+        verify(userRepository).findByToken("Valid-Token");
+        verify(userService).update(user, request);
+    }
+
+    @ParameterizedTest
+    @MethodSource({"partialAndEmptyUpdateRequest"})
+    void testUpdatePartialAndEmptyJsonSuccess(UpdateUserRequest request) {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken("Valid-Token"))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(user, request))
+                .thenReturn(UserResponse.builder().username(user.getUsername()).name(request.getName()).build());
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", "Valid-Token")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertNotNull(response.getData());
+
+        verify(userRepository).findByToken("Valid-Token");
+        verify(userService).update(user, request);
+    }
+
+    @ParameterizedTest
+    @MethodSource({"invalidUpdateRequest"})
+    void testUpdateValidationFailed(UpdateUserRequest request) {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken("Valid-Token"))
+                .thenReturn(Optional.of(user));
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", "Valid-Token")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
+        assertEquals("Request validation failed", response.getErrors().getMessage());
+        assertNotNull(response.getErrors().getDetails());
+
+        verify(userRepository).findByToken("Valid-Token");
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void testUpdateUnauthorized() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .password("NewPassword")
+                .build();
+
+        when(userRepository.findByToken("Valid-Token"))
+                .thenReturn(Optional.empty());
+
+        // act
+        WebResponse<UserResponse> response = client.patch()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", "Valid-Token")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
+        assertEquals("Unauthorized", response.getErrors().getMessage());
+        assertNull(response.getErrors().getDetails());
+
+        verify(userRepository).findByToken("Valid-Token");
+        verifyNoInteractions(userService);
+    }
+
+
     // ---------------------------------------------------------- HELPER
+
+    private static Stream<Arguments> invalidUpdateRequest(){
+        String over100 = "a".repeat(101);
+        String over72Bytes = "🚀".repeat(19);
+
+        return Stream.of(
+                Arguments.of(
+                        UpdateUserRequest.builder().name("").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().name("   ").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().name(over100).build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password("").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password("   ").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password("123").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password(over100).build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password(over72Bytes).build()
+                )
+        );
+    }
+
+    private static Stream<Arguments> partialAndEmptyUpdateRequest(){
+        return Stream.of(
+                Arguments.of(
+                        UpdateUserRequest.builder().name("John Doe Updated").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().password("NewPassword").build()
+                ),
+                Arguments.of(
+                        UpdateUserRequest.builder().build()
+                )
+        );
+    }
 
     /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */
     private RestTestClient.ResponseSpec getCurrent(String token){

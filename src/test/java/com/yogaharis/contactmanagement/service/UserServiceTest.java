@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.service;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
@@ -12,7 +13,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for {@link UserService} (register and get current user). The repository and
@@ -43,18 +48,18 @@ class UserServiceTest {
         // arrange
         RegisterUserRequest request = validRequest();
 
-        Mockito.when(userRepository.existsById(USERNAME))
+        when(userRepository.existsById(USERNAME))
                 .thenReturn(false);
-        Mockito.when(passwordEncoder.encode(RAW_PASSWORD))
+        when(passwordEncoder.encode(RAW_PASSWORD))
                 .thenReturn(HASH_PASSWORD);
-        Mockito.when(userRepository.saveAndFlush(Mockito.any(User.class)))
+        when(userRepository.saveAndFlush(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         // act
         UserResponse response = userService.register(request);
 
         // assert
-        InOrder inOrder = Mockito.inOrder(userRepository, passwordEncoder);
+        InOrder inOrder = inOrder(userRepository, passwordEncoder);
         inOrder.verify(userRepository).existsById(USERNAME);
         inOrder.verify(passwordEncoder).encode(RAW_PASSWORD);
 
@@ -78,7 +83,7 @@ class UserServiceTest {
         // arrange
         RegisterUserRequest request = validRequest();
 
-        Mockito.when(userRepository.existsById(USERNAME))
+        when(userRepository.existsById(USERNAME))
                 .thenReturn(true);
 
         // act & assert
@@ -87,8 +92,8 @@ class UserServiceTest {
         assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
         assertEquals("Username already exists", exception.getReason());
 
-        Mockito.verify(passwordEncoder, Mockito.never()).encode(Mockito.anyString());
-        Mockito.verify(userRepository, Mockito.never()).saveAndFlush(Mockito.any(User.class));
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 
     // ---------------------------------------------------------- GET
@@ -108,7 +113,161 @@ class UserServiceTest {
         assertEquals(USERNAME, response.getUsername());
         assertEquals(NAME, response.getName());
 
-        Mockito.verifyNoInteractions(userRepository, passwordEncoder);
+        verifyNoInteractions(userRepository, passwordEncoder);
+    }
+
+    // ---------------------------------------------------------- UPDATE
+    @Test
+    void testUpdateNameOnlySuccess() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        String oldName = user.getName();
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .build();
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // act
+        UserResponse response = userService.update(user, request);
+
+        // assert
+        assertNotNull(response);
+        assertEquals(user.getUsername(), response.getUsername());
+        assertEquals(user.getName(), response.getName());
+        assertNotEquals(oldName, user.getName());
+        assertEquals("JohnDoe", user.getUsername());
+        assertEquals("John Doe Updated", user.getName());
+        assertEquals("Hash-Password", user.getPassword());
+        assertEquals("Valid-Token", user.getToken());
+        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+
+        verify(userRepository).save(user);
+        verifyNoInteractions(passwordEncoder);
+    }
+
+    @Test
+    void testUpdatePasswordOnlySuccess() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        String oldPassword = user.getPassword();
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .password("new-password")
+                .build();
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(passwordEncoder.encode(request.getPassword()))
+                .thenReturn("Hash-New-Password");
+
+        // act
+        UserResponse response = userService.update(user, request);
+
+        // assert
+        ArgumentCaptor<User> userArgumentCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userArgumentCaptor.capture());
+
+        User captorValue = userArgumentCaptor.getValue();
+
+        assertEquals("Hash-New-Password", captorValue.getPassword());
+
+        assertNotNull(response);
+        assertNotEquals(oldPassword, user.getPassword());
+        assertEquals("JohnDoe", user.getUsername());
+        assertEquals("John Doe", user.getName());
+        assertEquals("Hash-New-Password", user.getPassword());
+        assertEquals("Valid-Token", user.getToken());
+        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+
+        verify(passwordEncoder).encode(request.getPassword());
+    }
+
+    @Test
+    void testUpdateBothNameAndPasswordSuccess() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        String oldName = user.getName();
+        String oldPassword = user.getPassword();
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("John Doe Updated")
+                .password("new-password")
+                .build();
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(passwordEncoder.encode(request.getPassword()))
+                .thenReturn("Hash-New-Password");
+
+        // act
+        UserResponse response = userService.update(user, request);
+
+        // assert
+        ArgumentCaptor<User> userArgumentCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userArgumentCaptor.capture());
+
+        User captorValue = userArgumentCaptor.getValue();
+
+        assertEquals("Hash-New-Password", captorValue.getPassword());
+
+        assertNotNull(response);
+        assertNotEquals(oldName, user.getName());
+        assertNotEquals(oldPassword, user.getPassword());
+        assertEquals("JohnDoe", user.getUsername());
+        assertEquals("John Doe Updated", user.getName());
+        assertEquals("Hash-New-Password", user.getPassword());
+        assertEquals("Valid-Token", user.getToken());
+        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+
+        verify(passwordEncoder).encode(request.getPassword());
+    }
+
+    @Test
+    void testUpdateNoOpWhenAllFieldNull() {
+        // arrange
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken("Valid-Token");
+        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .build();
+
+        // act
+        UserResponse response = userService.update(user, request);
+
+        // assert
+        assertNotNull(response);
+        assertEquals("JohnDoe", user.getUsername());
+        assertEquals("John Doe", user.getName());
+        assertEquals("Hash-Password", user.getPassword());
+        assertEquals("Valid-Token", user.getToken());
+        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+
+        verifyNoInteractions(userRepository, passwordEncoder);
     }
 
     // ---------------------------------------------------------- HELPER

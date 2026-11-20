@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.controller;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
 import com.yogaharis.contactmanagement.entity.User;
@@ -58,6 +59,16 @@ public class UserController {
     )
     public WebResponse<UserResponse> get(User user){
         UserResponse response = userService.get(user);
+        return WebResponse.<UserResponse>builder().data(response).build();
+    }
+
+    @PatchMapping(
+            path = "/current",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<UserResponse> update(User user, @Valid @RequestBody UpdateUserRequest request){
+        UserResponse response = userService.update(user, request);
         return WebResponse.<UserResponse>builder().data(response).build();
     }
 }
