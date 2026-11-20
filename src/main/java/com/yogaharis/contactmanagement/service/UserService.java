@@ -36,6 +36,8 @@ public class UserService {
     /** Error message returned when a username is already taken. */
     private static final String USERNAME_ALREADY_EXISTS = "Username already exists";
 
+    private static final String UNAUTHORIZED_MESSAGE = "Unauthorized";
+
     /**
      * Registers a new user.
      *
@@ -98,15 +100,18 @@ public class UserService {
             return toUserResponse(user);
         }
 
+        User managedUser = userRepository.findById(user.getUsername())
+                .orElseThrow(() -> responseStatusException(HttpStatus.UNAUTHORIZED, UNAUTHORIZED_MESSAGE));
+
         if (Objects.nonNull(request.getName())){
-            user.setName(request.getName());
+            managedUser.setName(request.getName());
         }
 
         if (Objects.nonNull(request.getPassword())){
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
+            managedUser.setPassword(passwordEncoder.encode(request.getPassword()));
         }
 
-        return toUserResponse(userRepository.save(user));
+        return toUserResponse(userRepository.save(managedUser));
     }
 
     /**

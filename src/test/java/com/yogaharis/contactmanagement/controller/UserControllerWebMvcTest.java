@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,8 +38,8 @@ import static org.mockito.Mockito.*;
  * Controller slice tests for {@link UserController} using {@code @WebMvcTest}.
  * The service layer is mocked; validation and error responses are verified over HTTP.
  *
- * <p>Get current user is tested through the real {@code UserArgumentResolver}, which looks the
- * user up by token in the mocked {@link UserRepository}.</p>
+ * <p>Get current user and update user are tested through the real {@code UserArgumentResolver}, which
+ * looks the user up by token in the mocked {@link UserRepository}.</p>
  *
  * @author Yoga Harisistianugroho
  */
@@ -61,6 +64,8 @@ public class UserControllerWebMvcTest {
     private static final String INVALID_TOKEN = "Invalid-token";
     private static final String HEADER = "X-API-TOKEN";
     private static final String HASH_PASSWORD = "Hash-password";
+    private static final String NEW_NAME = "Jhon Doe Updated";
+    private static final String NEW_PASSWORD = "NewPassword123";
 
     // ---------------------------------------------------------- REGISTER
 
@@ -288,32 +293,20 @@ public class UserControllerWebMvcTest {
     @Test
     void testUpdateUserSuccess() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
+        User user = registeredUser();
         UpdateUserRequest request = UpdateUserRequest.builder()
-                .name("John Doe Updated")
-                .password("NewPassword")
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
                 .build();
 
-        when(userRepository.findByToken("Valid-Token"))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
         when(userService.update(user, request))
-                .thenReturn(UserResponse.builder().username(user.getUsername()).name(request.getName()).build());
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NEW_NAME).build());
 
         // act
-        WebResponse<UserResponse> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", "Valid-Token")
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, request)
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
                 })
@@ -324,39 +317,28 @@ public class UserControllerWebMvcTest {
         assertNotNull(response);
         assertNull(response.getErrors());
         assertNotNull(response.getData());
-        assertEquals(user.getUsername(), response.getData().getUsername());
-        assertNotEquals(user.getName(), response.getData().getName());
-        assertEquals(request.getName(), response.getData().getName());
+        assertEquals(USERNAME, response.getData().getUsername());
+        assertEquals(NEW_NAME, response.getData().getName());
 
-        verify(userRepository).findByToken("Valid-Token");
+        verify(userRepository).findByToken(VALID_TOKEN);
         verify(userService).update(user, request);
     }
 
-    @ParameterizedTest
-    @MethodSource({"partialAndEmptyUpdateRequest"})
-    void testUpdatePartialAndEmptyJsonSuccess(UpdateUserRequest request) {
+    /** Raw JSON, so fields really are absent (or explicitly null) instead of serialized from the DTO. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"rawUpdateBodies"})
+    void testUpdateRawJsonBodySuccess(String json, UpdateUserRequest expected) {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+        User user = registeredUser();
 
-        when(userRepository.findByToken("Valid-Token"))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
-        when(userService.update(user, request))
-                .thenReturn(UserResponse.builder().username(user.getUsername()).name(request.getName()).build());
+        when(userService.update(user, expected))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NAME).build());
 
         // act
-        WebResponse<UserResponse> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", "Valid-Token")
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, json)
                 .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
                 })
@@ -367,35 +349,49 @@ public class UserControllerWebMvcTest {
         assertNotNull(response);
         assertNull(response.getErrors());
         assertNotNull(response.getData());
+        assertEquals(USERNAME, response.getData().getUsername());
 
-        verify(userRepository).findByToken("Valid-Token");
+        verify(userService).update(user, expected);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"boundaryUpdateRequests"})
+    void testUpdateBoundaryValuesAccepted(String scenario, UpdateUserRequest request) {
+        // arrange
+        User user = registeredUser();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(any(User.class), any(UpdateUserRequest.class)))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NAME).build());
+
+        // act
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+
         verify(userService).update(user, request);
     }
 
-    @ParameterizedTest
-    @MethodSource({"invalidUpdateRequest"})
-    void testUpdateValidationFailed(UpdateUserRequest request) {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"invalidUpdateRequests"})
+    void testUpdateValidationFailed(String scenario, UpdateUserRequest request, String invalidField, String invalidMessage) {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
-        when(userRepository.findByToken("Valid-Token"))
-                .thenReturn(Optional.of(user));
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
 
         // act
-        WebResponse<UserResponse> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", "Valid-Token")
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, request)
                 .expectStatus().isBadRequest()
-                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
                 .returnResult()
                 .getResponseBody();
@@ -406,40 +402,63 @@ public class UserControllerWebMvcTest {
         assertNotNull(response.getErrors());
         assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
         assertEquals("Request validation failed", response.getErrors().getMessage());
-        assertNotNull(response.getErrors().getDetails());
+        // anyMatch: one invalid value can violate several rules at once (e.g. blank and too short).
+        assertTrue(
+                response.getErrors().getDetails().stream()
+                        .anyMatch(detail ->
+                                detail.getField().equals(invalidField)
+                                        && detail.getMessage().equals(invalidMessage)
+                        )
+        );
 
-        verify(userRepository).findByToken("Valid-Token");
+        verify(userRepository).findByToken(VALID_TOKEN);
         verifyNoInteractions(userService);
     }
 
     @Test
-    void testUpdateUnauthorized() {
+    void testUpdateValidationFailedOnBothFields() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
         UpdateUserRequest request = UpdateUserRequest.builder()
-                .name("John Doe Updated")
-                .password("NewPassword")
+                .name("")
+                .password("short")
                 .build();
 
-        when(userRepository.findByToken("Valid-Token"))
-                .thenReturn(Optional.empty());
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
 
         // act
-        WebResponse<UserResponse> response = client.patch()
-                .uri("/api/users/current")
-                .header("X-API-TOKEN", "Valid-Token")
-                .accept(MediaType.APPLICATION_JSON)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .exchange()
-                .expectStatus().isUnauthorized()
-                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNotNull(response.getErrors());
+        assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
+
+        Set<String> invalidFields = response.getErrors().getDetails().stream()
+                .map(detail -> detail.getField())
+                .collect(Collectors.toSet());
+
+        assertEquals(Set.of("name", "password"), invalidFields);
+
+        verifyNoInteractions(userService);
+    }
+
+    @ParameterizedTest(name = "body = [{0}]")
+    @ValueSource(strings = {"", "{", "not-json"})
+    void testUpdateMissingOrMalformedBody(String body) {
+        // arrange
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
+
+        // act
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, body)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
                 })
                 .returnResult()
                 .getResponseBody();
@@ -448,61 +467,191 @@ public class UserControllerWebMvcTest {
         assertNotNull(response);
         assertNull(response.getData());
         assertNotNull(response.getErrors());
-        assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
-        assertEquals("Unauthorized", response.getErrors().getMessage());
-        assertNull(response.getErrors().getDetails());
+        assertEquals(HttpStatus.BAD_REQUEST.toString(), response.getErrors().getCode());
+        assertEquals("Request body is missing or malformed", response.getErrors().getMessage());
 
-        verify(userRepository).findByToken("Valid-Token");
         verifyNoInteractions(userService);
+    }
+
+    /** The {@code consumes} mismatch is rejected while mapping the request, before any token lookup. */
+    @Test
+    void testUpdateUnsupportedMediaType() {
+        WebResponse<Void> response = client.patch()
+                .uri("/api/users/current")
+                .header(HEADER, VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.TEXT_PLAIN)
+                .body("name=" + NEW_NAME)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNSUPPORTED_MEDIA_TYPE.toString(), response.getErrors().getCode());
+
+        verifyNoInteractions(userRepository, userService);
+    }
+
+    @ParameterizedTest(name = "token = [{0}]")
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void testUpdateMissingOrBlankToken(String token) {
+        assertUnauthorized(patchCurrent(token, UpdateUserRequest.builder().name(NEW_NAME).build()));
+
+        verifyNoInteractions(userRepository, userService);
+    }
+
+    @Test
+    void testUpdateUnauthorized() {
+        // arrange
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findByToken(INVALID_TOKEN))
+                .thenReturn(Optional.empty());
+
+        // act & assert
+        assertUnauthorized(patchCurrent(INVALID_TOKEN, request));
+
+        verify(userRepository).findByToken(INVALID_TOKEN);
+        verifyNoInteractions(userService);
+    }
+
+    /** Authentication runs before body validation, so an invalid body with a bad token is 401, not 400. */
+    @Test
+    void testUpdateUnauthorizedTakesPrecedenceOverValidation() {
+        // arrange
+        UpdateUserRequest invalidRequest = UpdateUserRequest.builder()
+                .name("")
+                .password("short")
+                .build();
+
+        when(userRepository.findByToken(INVALID_TOKEN))
+                .thenReturn(Optional.empty());
+
+        // act & assert
+        assertUnauthorized(patchCurrent(INVALID_TOKEN, invalidRequest));
+
+        verifyNoInteractions(userService);
+    }
+
+    /** Checks the raw JSON, since the deserialized DTO could not show extra or leaked fields. */
+    @Test
+    void testUpdateUserDoesNotExposeSensitiveFields() {
+        // arrange
+        User user = registeredUser();
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(user, request))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NEW_NAME).build());
+
+        // act & assert
+        patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.data.username").isEqualTo(USERNAME)
+                .jsonPath("$.data.name").isEqualTo(NEW_NAME)
+                .jsonPath("$.data.password").doesNotExist()
+                .jsonPath("$.data.token").doesNotExist()
+                .jsonPath("$.data.tokenExpiredAt").doesNotExist()
+                .jsonPath("$.errors").doesNotExist();
     }
 
 
     // ---------------------------------------------------------- HELPER
 
-    private static Stream<Arguments> invalidUpdateRequest(){
-        String over100 = "a".repeat(101);
-        String over72Bytes = "🚀".repeat(19);
-
+    private static Stream<Arguments> rawUpdateBodies(){
         return Stream.of(
-                Arguments.of(
-                        UpdateUserRequest.builder().name("").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().name("   ").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().name(over100).build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password("").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password("   ").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password("123").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password(over100).build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password(over72Bytes).build()
-                )
+                Arguments.of("{}",
+                        UpdateUserRequest.builder().build()),
+                Arguments.of("{\"name\":null,\"password\":null}",
+                        UpdateUserRequest.builder().build()),
+                Arguments.of("{\"name\":\"" + NEW_NAME + "\"}",
+                        UpdateUserRequest.builder().name(NEW_NAME).build()),
+                Arguments.of("{\"password\":\"" + NEW_PASSWORD + "\"}",
+                        UpdateUserRequest.builder().password(NEW_PASSWORD).build())
         );
     }
 
-    private static Stream<Arguments> partialAndEmptyUpdateRequest(){
+    private static Stream<Arguments> boundaryUpdateRequests(){
         return Stream.of(
-                Arguments.of(
-                        UpdateUserRequest.builder().name("John Doe Updated").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().password("NewPassword").build()
-                ),
-                Arguments.of(
-                        UpdateUserRequest.builder().build()
-                )
+                Arguments.of("name is exactly 100 characters",
+                        UpdateUserRequest.builder().name("a".repeat(100)).build()),
+                Arguments.of("password is exactly 8 characters",
+                        UpdateUserRequest.builder().password("12345678").build()),
+                Arguments.of("password is exactly 72 bytes (ASCII)",
+                        UpdateUserRequest.builder().password("a".repeat(72)).build()),
+                Arguments.of("password is exactly 72 bytes (multi-byte)",
+                        UpdateUserRequest.builder().password("🚀".repeat(18)).build())
         );
+    }
+
+    private static Stream<Arguments> invalidUpdateRequests(){
+        String over100Chars = "a".repeat(101);
+        String over72Bytes = "🚀".repeat(19); // 19 x 4 bytes = 76 bytes
+
+        return Stream.of(
+                Arguments.of("name is empty",
+                        UpdateUserRequest.builder().name("").build(),
+                        "name",
+                        "must not be blank"),
+                Arguments.of("name is whitespace only",
+                        UpdateUserRequest.builder().name("   ").build(),
+                        "name",
+                        "must not be blank"),
+                Arguments.of("name is longer than 100 characters",
+                        UpdateUserRequest.builder().name(over100Chars).build(),
+                        "name",
+                        "size must be between 0 and 100"),
+                Arguments.of("password is empty",
+                        UpdateUserRequest.builder().password("").build(),
+                        "password",
+                        "must not be blank"),
+                Arguments.of("password is whitespace only",
+                        UpdateUserRequest.builder().password("        ").build(),
+                        "password",
+                        "must not be blank"),
+                Arguments.of("password is shorter than 8 characters",
+                        UpdateUserRequest.builder().password("1234567").build(),
+                        "password",
+                        "size must be between 8 and 2147483647"),
+                Arguments.of("password is longer than 72 bytes (ASCII)",
+                        UpdateUserRequest.builder().password(over100Chars).build(),
+                        "password",
+                        "must not exceed 72 bytes"),
+                Arguments.of("password is longer than 72 bytes (multi-byte)",
+                        UpdateUserRequest.builder().password(over72Bytes).build(),
+                        "password",
+                        "must not exceed 72 bytes")
+        );
+    }
+
+    /** Calls {@code PATCH /api/users/current}. A {@code null} token omits the header entirely. */
+    private RestTestClient.ResponseSpec patchCurrent(String token, Object body){
+        return client.patch()
+                .uri("/api/users/current")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.set(HEADER, token);
+                    }
+                })
+                .body(body)
+                .exchange();
     }
 
     /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */

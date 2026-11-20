@@ -13,14 +13,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Duration;
-import java.time.Instant;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for {@link UserService} (register and get current user). The repository and
+ * Unit tests for {@link UserService} (register, get current user, and update user). The repository and
  * password encoder are mocked, so no Spring context or database is involved.
  *
  * @author Yoga Harisistianugroho
@@ -41,6 +40,11 @@ class UserServiceTest {
     private static final String RAW_PASSWORD = "Rahasia123";
     private static final String HASH_PASSWORD = "hash-password";
     private static final String NAME = "Jhon Doe";
+    private static final String TOKEN = "Valid-Token";
+    private static final Long TOKEN_EXPIRED_AT = 1_893_456_000_000L;
+    private static final String NEW_NAME = "Jhon Doe Updated";
+    private static final String NEW_PASSWORD = "NewPassword123";
+    private static final String NEW_HASH_PASSWORD = "new-hash-password";
 
     // ---------------------------------------------------------- REGISTER
     @Test
@@ -120,19 +124,13 @@ class UserServiceTest {
     @Test
     void testUpdateNameOnlySuccess() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
-        String oldName = user.getName();
-
+        User user = currentUser();
         UpdateUserRequest request = UpdateUserRequest.builder()
-                .name("John Doe Updated")
+                .name(NEW_NAME)
                 .build();
 
+        when(userRepository.findById(USERNAME))
+                .thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -140,15 +138,13 @@ class UserServiceTest {
         UserResponse response = userService.update(user, request);
 
         // assert
-        assertNotNull(response);
-        assertEquals(user.getUsername(), response.getUsername());
-        assertEquals(user.getName(), response.getName());
-        assertNotEquals(oldName, user.getName());
-        assertEquals("JohnDoe", user.getUsername());
-        assertEquals("John Doe Updated", user.getName());
-        assertEquals("Hash-Password", user.getPassword());
-        assertEquals("Valid-Token", user.getToken());
-        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+        assertEquals(USERNAME, response.getUsername());
+        assertEquals(NEW_NAME, response.getName());
+
+        assertEquals(NEW_NAME, user.getName());
+        assertEquals(HASH_PASSWORD, user.getPassword());
+        assertEquals(TOKEN, user.getToken());
+        assertEquals(TOKEN_EXPIRED_AT, user.getTokenExpiredAt());
 
         verify(userRepository).save(user);
         verifyNoInteractions(passwordEncoder);
@@ -157,23 +153,17 @@ class UserServiceTest {
     @Test
     void testUpdatePasswordOnlySuccess() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
-        String oldPassword = user.getPassword();
-
+        User user = currentUser();
         UpdateUserRequest request = UpdateUserRequest.builder()
-                .password("new-password")
+                .password(NEW_PASSWORD)
                 .build();
 
+        when(userRepository.findById(USERNAME))
+                .thenReturn(Optional.of(user));
+        when(passwordEncoder.encode(NEW_PASSWORD))
+                .thenReturn(NEW_HASH_PASSWORD);
         when(userRepository.save(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(passwordEncoder.encode(request.getPassword()))
-                .thenReturn("Hash-New-Password");
 
         // act
         UserResponse response = userService.update(user, request);
@@ -182,77 +172,63 @@ class UserServiceTest {
         ArgumentCaptor<User> userArgumentCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userArgumentCaptor.capture());
 
-        User captorValue = userArgumentCaptor.getValue();
+        User saved = userArgumentCaptor.getValue();
 
-        assertEquals("Hash-New-Password", captorValue.getPassword());
+        assertEquals(NEW_HASH_PASSWORD, saved.getPassword());
+        assertNotEquals(NEW_PASSWORD, saved.getPassword());
+        assertEquals(NAME, saved.getName());
+        assertEquals(TOKEN, saved.getToken());
+        assertEquals(TOKEN_EXPIRED_AT, saved.getTokenExpiredAt());
 
-        assertNotNull(response);
-        assertNotEquals(oldPassword, user.getPassword());
-        assertEquals("JohnDoe", user.getUsername());
-        assertEquals("John Doe", user.getName());
-        assertEquals("Hash-New-Password", user.getPassword());
-        assertEquals("Valid-Token", user.getToken());
-        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+        assertEquals(USERNAME, response.getUsername());
+        assertEquals(NAME, response.getName());
 
-        verify(passwordEncoder).encode(request.getPassword());
+        verify(passwordEncoder).encode(NEW_PASSWORD);
     }
 
     @Test
     void testUpdateBothNameAndPasswordSuccess() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
-        String oldName = user.getName();
-        String oldPassword = user.getPassword();
-
+        User user = currentUser();
         UpdateUserRequest request = UpdateUserRequest.builder()
-                .name("John Doe Updated")
-                .password("new-password")
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
                 .build();
 
+        when(userRepository.findById(USERNAME))
+                .thenReturn(Optional.of(user));
+        when(passwordEncoder.encode(NEW_PASSWORD))
+                .thenReturn(NEW_HASH_PASSWORD);
         when(userRepository.save(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(passwordEncoder.encode(request.getPassword()))
-                .thenReturn("Hash-New-Password");
 
         // act
         UserResponse response = userService.update(user, request);
 
         // assert
+        InOrder inOrder = inOrder(userRepository, passwordEncoder);
+        inOrder.verify(userRepository).findById(USERNAME);
+        inOrder.verify(passwordEncoder).encode(NEW_PASSWORD);
+
         ArgumentCaptor<User> userArgumentCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userArgumentCaptor.capture());
+        inOrder.verify(userRepository).save(userArgumentCaptor.capture());
 
-        User captorValue = userArgumentCaptor.getValue();
+        User saved = userArgumentCaptor.getValue();
 
-        assertEquals("Hash-New-Password", captorValue.getPassword());
+        assertEquals(NEW_NAME, saved.getName());
+        assertEquals(NEW_HASH_PASSWORD, saved.getPassword());
+        assertEquals(USERNAME, saved.getUsername());
+        assertEquals(TOKEN, saved.getToken());
+        assertEquals(TOKEN_EXPIRED_AT, saved.getTokenExpiredAt());
 
-        assertNotNull(response);
-        assertNotEquals(oldName, user.getName());
-        assertNotEquals(oldPassword, user.getPassword());
-        assertEquals("JohnDoe", user.getUsername());
-        assertEquals("John Doe Updated", user.getName());
-        assertEquals("Hash-New-Password", user.getPassword());
-        assertEquals("Valid-Token", user.getToken());
-        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
-
-        verify(passwordEncoder).encode(request.getPassword());
+        assertEquals(USERNAME, response.getUsername());
+        assertEquals(NEW_NAME, response.getName());
     }
 
     @Test
     void testUpdateNoOpWhenAllFieldNull() {
         // arrange
-        User user = new User();
-        user.setUsername("JohnDoe");
-        user.setPassword("Hash-Password");
-        user.setName("John Doe");
-        user.setToken("Valid-Token");
-        user.setTokenExpiredAt(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
-
+        User user = currentUser();
         UpdateUserRequest request = UpdateUserRequest.builder()
                 .build();
 
@@ -260,14 +236,74 @@ class UserServiceTest {
         UserResponse response = userService.update(user, request);
 
         // assert
-        assertNotNull(response);
-        assertEquals("JohnDoe", user.getUsername());
-        assertEquals("John Doe", user.getName());
-        assertEquals("Hash-Password", user.getPassword());
-        assertEquals("Valid-Token", user.getToken());
-        assertTrue(user.getTokenExpiredAt() > Instant.now().toEpochMilli());
+        assertEquals(USERNAME, response.getUsername());
+        assertEquals(NAME, response.getName());
+
+        assertEquals(NAME, user.getName());
+        assertEquals(HASH_PASSWORD, user.getPassword());
+        assertEquals(TOKEN, user.getToken());
+        assertEquals(TOKEN_EXPIRED_AT, user.getTokenExpiredAt());
 
         verifyNoInteractions(userRepository, passwordEncoder);
+    }
+
+    /**
+     * Regression test: the user passed in may be stale (detached), so the service must change the
+     * entity loaded from the repository and never save the stale one, or a token issued by a
+     * concurrent login would be overwritten.
+     */
+    @Test
+    void testUpdateModifiesLoadedEntityNotStaleOne() {
+        // arrange
+        User stale = currentUser();
+
+        User loaded = currentUser();
+        loaded.setToken("Token-Issued-After-Authentication");
+        loaded.setTokenExpiredAt(TOKEN_EXPIRED_AT + 1);
+
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .build();
+
+        when(userRepository.findById(USERNAME))
+                .thenReturn(Optional.of(loaded));
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // act
+        userService.update(stale, request);
+
+        // assert
+        ArgumentCaptor<User> userArgumentCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userArgumentCaptor.capture());
+
+        assertSame(loaded, userArgumentCaptor.getValue());
+        assertEquals(NEW_NAME, loaded.getName());
+        assertEquals("Token-Issued-After-Authentication", loaded.getToken());
+        assertEquals(TOKEN_EXPIRED_AT + 1, loaded.getTokenExpiredAt());
+        assertEquals(NAME, stale.getName());
+    }
+
+    @Test
+    void testUpdateUserNoLongerExists() {
+        // arrange
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findById(USERNAME))
+                .thenReturn(Optional.empty());
+
+        // act & assert
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> userService.update(currentUser(), request));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals("Unauthorized", exception.getReason());
+
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(passwordEncoder);
     }
 
     // ---------------------------------------------------------- HELPER
@@ -277,5 +313,15 @@ class UserServiceTest {
                 .password(RAW_PASSWORD)
                 .name(NAME)
                 .build();
+    }
+
+    private User currentUser(){
+        User user = new User();
+        user.setUsername(USERNAME);
+        user.setPassword(HASH_PASSWORD);
+        user.setName(NAME);
+        user.setToken(TOKEN);
+        user.setTokenExpiredAt(TOKEN_EXPIRED_AT);
+        return user;
     }
 }

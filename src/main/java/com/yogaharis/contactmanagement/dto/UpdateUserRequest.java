@@ -13,7 +13,7 @@ import lombok.*;
 public class UpdateUserRequest {
 
     @Pattern(regexp = "(?s).*\\S.*", message = "must not be blank")
-    @Size(min = 1, max = 100)
+    @Size(max = 100)
     private String name;
 
     @Pattern(regexp = "(?s).*\\S.*", message = "must not be blank")
