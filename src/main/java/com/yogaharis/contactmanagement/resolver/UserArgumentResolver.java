@@ -3,6 +3,7 @@ package com.yogaharis.contactmanagement.resolver;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import java.time.Instant;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class UserArgumentResolver implements HandlerMethodArgumentResolver {
 
     private final UserRepository userRepository;
@@ -62,14 +64,19 @@ public class UserArgumentResolver implements HandlerMethodArgumentResolver {
         String header = webRequest.getHeader("X-API-TOKEN");
         // A missing or blank header means the client did not authenticate.
         if (header == null || header.isBlank()){
+            log.debug("Authentication rejected: reason=missing_token");
             throw new ResponseStatusException(UNAUTHORIZED_CODE, UNAUTHORIZED_MESSAGE);
         }
 
         User user = userRepository.findByToken(header)
-                .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED_CODE, UNAUTHORIZED_MESSAGE));
+                .orElseThrow(() -> {
+                    log.warn("Authentication rejected: reason=unknown_token");
+                    return new ResponseStatusException(UNAUTHORIZED_CODE, UNAUTHORIZED_MESSAGE);
+                });
 
         // A token without an expiry is invalid, as is one whose expiry time has passed.
         if (user.getTokenExpiredAt() == null || user.getTokenExpiredAt() < Instant.now().toEpochMilli()){
+            log.debug("Authentication rejected: reason=token_expired_or_no_expiry, username={}", user.getUsername());
             throw new ResponseStatusException(UNAUTHORIZED_CODE, UNAUTHORIZED_MESSAGE);
         }
 

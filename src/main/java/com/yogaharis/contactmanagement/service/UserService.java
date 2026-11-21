@@ -96,12 +96,19 @@ public class UserService {
 
     @Transactional
     public UserResponse update(User user, UpdateUserRequest request){
+        log.debug("Update user requested: username={}, nameProvided={}, passwordProvided={}",
+                user.getUsername(), Objects.nonNull(request.getName()), Objects.nonNull(request.getPassword()));
+
         if (Objects.isNull(request.getName()) && Objects.isNull(request.getPassword())){
+            log.debug("Update user skipped: reason=no_fields_provided, username={}", user.getUsername());
             return toUserResponse(user);
         }
 
         User managedUser = userRepository.findById(user.getUsername())
-                .orElseThrow(() -> responseStatusException(HttpStatus.UNAUTHORIZED, UNAUTHORIZED_MESSAGE));
+                .orElseThrow(() -> {
+                    log.warn("Update user rejected: reason=user_not_found, username={}", user.getUsername());
+                    return responseStatusException(HttpStatus.UNAUTHORIZED, UNAUTHORIZED_MESSAGE);
+                });
 
         if (Objects.nonNull(request.getName())){
             managedUser.setName(request.getName());
@@ -111,7 +118,12 @@ public class UserService {
             managedUser.setPassword(passwordEncoder.encode(request.getPassword()));
         }
 
-        return toUserResponse(userRepository.save(managedUser));
+        User savedUser = userRepository.save(managedUser);
+
+        log.info("User updated: username={}, nameUpdated={}, passwordUpdated={}",
+                savedUser.getUsername(), Objects.nonNull(request.getName()), Objects.nonNull(request.getPassword()));
+
+        return toUserResponse(savedUser);
     }
 
     /**
