@@ -268,6 +268,7 @@ public class UserControllerTest {
     }
 
     // ---------------------------------------------------------- UPDATE
+    /** Only the name changes; the stored password hash and token fields stay exactly as they were. */
     @Test
     void testUpdateUserNameOnlySuccess() {
         // arrange
@@ -319,6 +320,7 @@ public class UserControllerTest {
         assertNotNull(login(USERNAME, NEW_PASSWORD));
     }
 
+    /** The stored dummy hash is replaced by a BCrypt hash of the new password, which then works for login; the token is not changed. */
     @Test
     void testUpdateUserBothFieldSuccess() {
         // arrange
@@ -345,6 +347,7 @@ public class UserControllerTest {
         assertNotNull(login(USERNAME, NEW_PASSWORD));
     }
 
+    /** An empty request returns the current data and leaves the stored row untouched. */
     @Test
     void testUpdateUserNoOpIntegration() {
         // arrange
@@ -360,6 +363,7 @@ public class UserControllerTest {
         assertUnchanged(user);
     }
 
+    /** Updating through one user's token must not touch another user's row. */
     @Test
     void testUpdateOnlyChangesAuthenticatedUser() {
         // arrange
@@ -401,6 +405,7 @@ public class UserControllerTest {
         assertEquals(user.getTokenExpiredAt(), userDb.getTokenExpiredAt());
     }
 
+    /** The longest allowed name and a 72-byte multi-byte password are stored, and the new password works for login. */
     @Test
     void testUpdateBoundaryValuesPersisted() {
         // arrange
@@ -452,6 +457,7 @@ public class UserControllerTest {
         assertUnauthorized(getCurrent(oldToken));
     }
 
+    /** No usable token: 401, and the stored user is unchanged. */
     @ParameterizedTest(name = "token = [{0}]")
     @NullAndEmptySource
     void testUpdateMissingToken(String token) {
@@ -462,6 +468,7 @@ public class UserControllerTest {
         assertUnchanged(user);
     }
 
+    /** A token that no user owns: 401, and the stored user is unchanged. */
     @Test
     void testUpdateTokenNotFound() {
         User user = registeredUser();
@@ -471,6 +478,7 @@ public class UserControllerTest {
         assertUnchanged(user);
     }
 
+    /** A token that expired one second ago: 401, and the stored user is unchanged. */
     @Test
     void testUpdateTokenExpired() {
         User user = registeredUser(USERNAME, NAME, VALID_TOKEN, Instant.now().minus(Duration.ofSeconds(1)).toEpochMilli());
@@ -509,6 +517,7 @@ public class UserControllerTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /** Requests that mix a valid field with an invalid one, to show a rejected request saves nothing. */
     private static Stream<Arguments> invalidUpdateRequests(){
         return Stream.of(
                 Arguments.of("valid name, password too short",
@@ -538,10 +547,12 @@ public class UserControllerTest {
         return userRepository.save(user);
     }
 
+    /** Loads a user straight from the database, failing the test if it is missing. */
     private User findUser(String username){
         return userRepository.findById(username).orElseThrow();
     }
 
+    /** Asserts that the stored row still holds the name, password hash, token and expiry of {@code original}. */
     private void assertUnchanged(User original){
         User userDb = findUser(original.getUsername());
 
@@ -652,6 +663,7 @@ public class UserControllerTest {
         return response;
     }
 
+    /** Calls {@code POST /api/auth/login} and returns the response for the caller to assert on. */
     private RestTestClient.ResponseSpec loginSpec(String username, String password){
         return client.post()
                 .uri("/api/auth/login")

@@ -62,6 +62,19 @@ public class UserController {
         return WebResponse.<UserResponse>builder().data(response).build();
     }
 
+    /**
+     * Updates the name and/or password of the authenticated user ({@code PATCH /api/users/current}).
+     *
+     * <p>Only the fields present in the request body are changed; omitted or {@code null} fields keep
+     * their current value, and an empty JSON object changes nothing. The {@code user} parameter is
+     * resolved from the {@code X-API-TOKEN} header by {@code UserArgumentResolver}. Because it is
+     * declared before the body, authentication runs first, so an invalid token is rejected with
+     * {@code 401 UNAUTHORIZED} even if the body is also invalid.</p>
+     *
+     * @param user    the authenticated user, supplied by {@code UserArgumentResolver}
+     * @param request the fields to change; validated with {@code @Valid} after authentication
+     * @return a {@link WebResponse} whose {@code data} holds the user's username and (possibly new) name
+     */
     @PatchMapping(
             path = "/current",
             consumes = MediaType.APPLICATION_JSON_VALUE,

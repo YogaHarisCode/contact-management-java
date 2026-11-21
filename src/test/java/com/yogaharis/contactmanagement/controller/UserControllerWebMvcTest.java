@@ -289,7 +289,7 @@ public class UserControllerWebMvcTest {
     }
 
     // ---------------------------------------------------------- UPDATE
-
+    /** Both fields are sent and the user found by the resolver is passed to the service along with the request. */
     @Test
     void testUpdateUserSuccess() {
         // arrange
@@ -302,6 +302,7 @@ public class UserControllerWebMvcTest {
         when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
+        // the stub only matches if JSON deserialization produced a request equal to the one sent
         when(userService.update(user, request))
                 .thenReturn(UserResponse.builder().username(USERNAME).name(NEW_NAME).build());
 
@@ -354,6 +355,7 @@ public class UserControllerWebMvcTest {
         verify(userService).update(user, expected);
     }
 
+    /** Values exactly at the limits (100 characters, 8 characters, 72 bytes) pass validation. */
     @ParameterizedTest(name = "{0}")
     @MethodSource({"boundaryUpdateRequests"})
     void testUpdateBoundaryValuesAccepted(String scenario, UpdateUserRequest request) {
@@ -363,6 +365,7 @@ public class UserControllerWebMvcTest {
         when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
+        // the body differs per scenario, so the stub matches any request and the exact one is verified afterwards
         when(userService.update(any(User.class), any(UpdateUserRequest.class)))
                 .thenReturn(UserResponse.builder().username(USERNAME).name(NAME).build());
 
@@ -381,6 +384,10 @@ public class UserControllerWebMvcTest {
         verify(userService).update(user, request);
     }
 
+    /**
+     * Each invalid value returns 400 with the offending field and message, and the service is never called.
+     * The token is still looked up first, because authentication runs before validation.
+     */
     @ParameterizedTest(name = "{0}")
     @MethodSource({"invalidUpdateRequests"})
     void testUpdateValidationFailed(String scenario, UpdateUserRequest request, String invalidField, String invalidMessage) {
@@ -415,6 +422,7 @@ public class UserControllerWebMvcTest {
         verifyNoInteractions(userService);
     }
 
+    /** When both fields are invalid, each one is reported separately in {@code details}. */
     @Test
     void testUpdateValidationFailedOnBothFields() {
         // arrange
@@ -448,6 +456,7 @@ public class UserControllerWebMvcTest {
         verifyNoInteractions(userService);
     }
 
+    /** An empty, truncated or non-JSON body is rejected after authentication with the generic 400 message. */
     @ParameterizedTest(name = "body = [{0}]")
     @ValueSource(strings = {"", "{", "not-json"})
     void testUpdateMissingOrMalformedBody(String body) {
@@ -497,6 +506,7 @@ public class UserControllerWebMvcTest {
         verifyNoInteractions(userRepository, userService);
     }
 
+    /** A missing, empty or whitespace-only header is rejected before any database lookup, like on GET. */
     @ParameterizedTest(name = "token = [{0}]")
     @NullAndEmptySource
     @ValueSource(strings = {"   "})
@@ -506,6 +516,7 @@ public class UserControllerWebMvcTest {
         verifyNoInteractions(userRepository, userService);
     }
 
+    /** A token that no user owns is rejected with 401, and the service is never called. */
     @Test
     void testUpdateUnauthorized() {
         // arrange
@@ -573,10 +584,12 @@ public class UserControllerWebMvcTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /** Raw JSON bodies with the request each should deserialize to: empty object, explicit nulls, and a single field. */
     private static Stream<Arguments> rawUpdateBodies(){
         return Stream.of(
                 Arguments.of("{}",
                         UpdateUserRequest.builder().build()),
+                // explicit nulls mean the same as absent fields
                 Arguments.of("{\"name\":null,\"password\":null}",
                         UpdateUserRequest.builder().build()),
                 Arguments.of("{\"name\":\"" + NEW_NAME + "\"}",
@@ -586,6 +599,7 @@ public class UserControllerWebMvcTest {
         );
     }
 
+    /** Valid requests exactly at the size limits. */
     private static Stream<Arguments> boundaryUpdateRequests(){
         return Stream.of(
                 Arguments.of("name is exactly 100 characters",
@@ -599,6 +613,7 @@ public class UserControllerWebMvcTest {
         );
     }
 
+    /** Invalid requests with the field and message each should produce (default Bean Validation messages unless the DTO sets one). */
     private static Stream<Arguments> invalidUpdateRequests(){
         String over100Chars = "a".repeat(101);
         String over72Bytes = "🚀".repeat(19); // 19 x 4 bytes = 76 bytes

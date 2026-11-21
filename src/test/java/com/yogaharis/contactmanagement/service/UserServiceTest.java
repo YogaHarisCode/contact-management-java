@@ -121,6 +121,7 @@ class UserServiceTest {
     }
 
     // ---------------------------------------------------------- UPDATE
+    /** Only the name is provided: the password is not re-hashed and the token fields stay as they were. */
     @Test
     void testUpdateNameOnlySuccess() {
         // arrange
@@ -131,6 +132,7 @@ class UserServiceTest {
 
         when(userRepository.findById(USERNAME))
                 .thenReturn(Optional.of(user));
+        // save returns the entity it was given, like the real repository does
         when(userRepository.save(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -150,6 +152,7 @@ class UserServiceTest {
         verifyNoInteractions(passwordEncoder);
     }
 
+    /** Only the password is provided: it is stored as the encoder's hash, never as the raw value, and the name is untouched. */
     @Test
     void testUpdatePasswordOnlySuccess() {
         // arrange
@@ -186,6 +189,7 @@ class UserServiceTest {
         verify(passwordEncoder).encode(NEW_PASSWORD);
     }
 
+    /** The user is reloaded first, then the password is hashed, then the entity is saved, in that order. */
     @Test
     void testUpdateBothNameAndPasswordSuccess() {
         // arrange
@@ -225,6 +229,7 @@ class UserServiceTest {
         assertEquals(NEW_NAME, response.getName());
     }
 
+    /** With nothing to change, the service answers from the given user without touching the repository or encoder. */
     @Test
     void testUpdateNoOpWhenAllFieldNull() {
         // arrange
@@ -257,6 +262,7 @@ class UserServiceTest {
         // arrange
         User stale = currentUser();
 
+        // the row as it is now: a login issued a newer token after `stale` was loaded
         User loaded = currentUser();
         loaded.setToken("Token-Issued-After-Authentication");
         loaded.setTokenExpiredAt(TOKEN_EXPIRED_AT + 1);
@@ -284,6 +290,7 @@ class UserServiceTest {
         assertEquals(NAME, stale.getName());
     }
 
+    /** The user was deleted after authentication: respond 401, and neither hash the password nor save anything. */
     @Test
     void testUpdateUserNoLongerExists() {
         // arrange
@@ -315,6 +322,7 @@ class UserServiceTest {
                 .build();
     }
 
+    /** Builds a user with a fixed token expiry, so assertions do not depend on the current time. */
     private User currentUser(){
         User user = new User();
         user.setUsername(USERNAME);
