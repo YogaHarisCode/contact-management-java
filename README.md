@@ -2,7 +2,7 @@
 
 A REST API backend for managing users, contacts, and addresses, built with Java and Spring Boot.
 
-This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration, login, and get current user are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
+This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration, login, get current user, and update current user are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
 
 ## Tech Stack
 
@@ -100,7 +100,7 @@ The project uses three kinds of tests for every feature:
 | Controller slice test | `UserControllerWebMvcTest`, `AuthControllerWebMvcTest` | Controller layer, validation, and error responses (`@WebMvcTest`, service mocked) |
 | Integration test | `UserControllerTest`, `AuthControllerTest` | Full flow from controller to the `contact_management_test` database |
 
-`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header. The same component is also exercised over HTTP by the get current user tests in `UserControllerWebMvcTest` and `UserControllerTest`.
+`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header. The same component is also exercised over HTTP by the get current user and update user tests in `UserControllerWebMvcTest` and `UserControllerTest`.
 
 Integration tests use the `test` profile. Make sure the `contact_management_test` database exists and the credentials used by the test profile are valid.
 
@@ -135,6 +135,8 @@ Error:
 | `errors.code` | HTTP status (for example `409 CONFLICT`, `401 UNAUTHORIZED`), or `VALIDATION_ERROR` for validation failures |
 | `errors.message` | Human-readable message |
 | `errors.details` | Per-field problems. Only present for validation errors |
+
+Endpoints that accept a JSON body return `415 Unsupported Media Type` when `Content-Type` is not JSON.
 
 ### Register User
 
@@ -349,9 +351,98 @@ curl http://localhost:8080/api/users/current \
   -H "Accept: application/json"
 ```
 
+### Update Current User
+
+Updates the name and/or password of the user that owns the token. Only the fields that are sent are changed.
+
+- **Method:** `PATCH`
+- **URL:** `/api/users/current`
+- **Headers:** `X-API-TOKEN: <token>`, `Content-Type: application/json`, `Accept: application/json`
+
+**Request body**
+
+```json
+{
+  "name": "John Doe Updated",
+  "password": "newsecretpassword"
+}
+```
+
+| Field | Required | Rules |
+|---|---|---|
+| `name` | No | Must not be blank when provided. Max 100 characters |
+| `password` | No | Must not be blank when provided. At least 8 characters. Max 72 bytes in UTF-8 (BCrypt limit) |
+
+- A field that is left out, or sent as `null`, is not changed.
+- An empty JSON object (`{}`) is valid: nothing changes and the response holds the current data.
+- Authentication is checked before the body is validated, so an invalid token returns `401` even if the body is also invalid.
+- Updating the password does not replace or invalidate the current token.
+
+**Responses**
+
+`200 OK`
+
+```json
+{
+  "data": {
+    "username": "johndoe",
+    "name": "John Doe Updated"
+  }
+}
+```
+
+`400 Bad Request` (validation failed)
+
+```json
+{
+  "errors": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "name",
+        "message": "must not be blank"
+      }
+    ]
+  }
+}
+```
+
+`400 Bad Request` (missing or malformed JSON body)
+
+```json
+{
+  "errors": {
+    "code": "400 BAD_REQUEST",
+    "message": "Request body is missing or malformed"
+  }
+}
+```
+
+`401 Unauthorized` (header missing or blank, token unknown or expired, or the user no longer exists)
+
+```json
+{
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
+}
+```
+
+**Example**
+
+```bash
+curl -X PATCH http://localhost:8080/api/users/current \
+  -H "X-API-TOKEN: <token>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"name":"John Doe Updated","password":"newsecretpassword"}'
+```
+
 ### Authentication token
 
-Login issues a token that clients send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented in `UserArgumentResolver`: any controller method that declares a `User` parameter is authenticated automatically. Currently only `GET /api/users/current` uses it. Full Spring Security integration is planned.
+Login issues a token that clients send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented in `UserArgumentResolver`: any controller method that declares a `User` parameter is authenticated automatically. Currently `GET /api/users/current` and `PATCH /api/users/current` use it. Full Spring Security integration is planned.
 
 ### Planned endpoints
 
@@ -360,7 +451,6 @@ These endpoints are not implemented yet.
 | Module | Method | URL |
 |---|---|---|
 | Auth | `DELETE` | `/api/auth/logout` |
-| User | `PATCH` | `/api/users/current` |
 | Contact | `POST` | `/api/contacts` |
 | Contact | `GET` | `/api/contacts` (search with pagination) |
 | Contact | `GET` | `/api/contacts/{contactId}` |
@@ -400,6 +490,7 @@ contact-management-java/
     │   │   │   ├── LoginUserRequest.java
     │   │   │   ├── RegisterUserRequest.java
     │   │   │   ├── TokenResponse.java
+    │   │   │   ├── UpdateUserRequest.java
     │   │   │   ├── UserResponse.java
     │   │   │   └── WebResponse.java
     │   │   ├── entity/

@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.service;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
@@ -13,6 +14,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Objects;
 
 /**
  * Business logic for user management.
@@ -32,6 +35,9 @@ public class UserService {
 
     /** Error message returned when a username is already taken. */
     private static final String USERNAME_ALREADY_EXISTS = "Username already exists";
+
+    /** Error message returned when the authenticated user no longer exists. */
+    private static final String UNAUTHORIZED_MESSAGE = "Unauthorized";
 
     /**
      * Registers a new user.
@@ -87,6 +93,60 @@ public class UserService {
         log.debug("Get current user: username={}", user.getUsername());
 
         return toUserResponse(user);
+    }
+
+    /**
+     * Updates the name and/or password of the authenticated user.
+     *
+     * <p>Only the fields that are not {@code null} in the request are changed. A new password is hashed
+     * with BCrypt before it is stored. If both fields are {@code null}, nothing is changed and the
+     * database is not accessed. The token and its expiry are never modified.</p>
+     *
+     * <p>The given user was loaded by {@code UserArgumentResolver} outside this transaction, so it can be
+     * stale (for example, a login may have issued a newer token since). The user is therefore reloaded
+     * by username and the changes are applied to that fresh entity.</p>
+     *
+     * @param user    the authenticated user, supplied by {@code UserArgumentResolver}; its username is used
+     *                to reload the user, and it is returned as-is when there is nothing to update
+     * @param request the validated update data; {@code null} fields are left unchanged
+     * @return the user's public data after the update (username and name, never the password or token)
+     * @throws ResponseStatusException with status {@code 401 UNAUTHORIZED} if the user no longer exists
+     */
+    @Transactional
+    public UserResponse update(User user, UpdateUserRequest request){
+        log.debug("Update user requested: username={}, nameProvided={}, passwordProvided={}",
+                user.getUsername(), Objects.nonNull(request.getName()), Objects.nonNull(request.getPassword()));
+
+        // Nothing to change: answer from the given user without touching the database.
+        if (Objects.isNull(request.getName()) && Objects.isNull(request.getPassword())){
+            log.debug("Update user skipped: reason=no_fields_provided, username={}", user.getUsername());
+            return toUserResponse(user);
+        }
+
+        // The given user may be stale. Reloading it means only the changed columns are written and a
+        // token issued by a concurrent login is not overwritten with old data.
+        User managedUser = userRepository.findById(user.getUsername())
+                .orElseThrow(() -> {
+                    log.warn("Update user rejected: reason=user_not_found, username={}", user.getUsername());
+                    return responseStatusException(HttpStatus.UNAUTHORIZED, UNAUTHORIZED_MESSAGE);
+                });
+
+        // A null field means "not provided", so the stored value is kept.
+        if (Objects.nonNull(request.getName())){
+            managedUser.setName(request.getName());
+        }
+
+        if (Objects.nonNull(request.getPassword())){
+            // Only the BCrypt hash is stored; the raw password never reaches the database.
+            managedUser.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        User savedUser = userRepository.save(managedUser);
+
+        log.info("User updated: username={}, nameUpdated={}, passwordUpdated={}",
+                savedUser.getUsername(), Objects.nonNull(request.getName()), Objects.nonNull(request.getPassword()));
+
+        return toUserResponse(savedUser);
     }
 
     /**

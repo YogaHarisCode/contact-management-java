@@ -98,6 +98,10 @@ Missing or malformed JSON body:
 }
 ```
 
+#### Unsupported Media Type (415)
+
+Returned when `Content-Type` is not JSON.
+
 ---
 
 ## 2. Login User
@@ -228,9 +232,7 @@ Returned when the `X-API-TOKEN` header is missing or blank, the token is unknown
 
 ## 4. Update User
 
-Update current authenticated user information (Name and/or Password).
-
-**Status**: Not implemented yet.
+Update current authenticated user information (name and/or password). Only the fields that are sent are changed.
 
 - **URL**: `/api/users/current`
 - **Method**: `PATCH`
@@ -239,6 +241,8 @@ Update current authenticated user information (Name and/or Password).
   - `Content-Type: application/json`
   - `Accept: application/json`
 
+The user is identified by the token in `X-API-TOKEN`.
+
 ### Request Body
 ```json
 {
@@ -246,7 +250,18 @@ Update current authenticated user information (Name and/or Password).
   "password": "newsecretpassword"
 }
 ```
-*(Note: All fields are optional)*
+
+| Field | Required | Rules |
+|---|---|---|
+| `name` | No | Must not be blank when provided. Max 100 characters |
+| `password` | No | Must not be blank when provided. At least 8 characters. Max 72 bytes in UTF-8 (BCrypt limit) |
+
+Behavior:
+- A field that is left out, or sent as `null`, is not changed.
+- An empty JSON object (`{}`) is valid. Nothing changes and the response holds the current data.
+- Fields other than `name` and `password` in the body are ignored.
+- Authentication is checked before the body is validated. A request with an invalid token returns `401` even if its body is also invalid.
+- The token is not replaced or invalidated by this request, including when the password changes. It stays valid until it expires or the next login replaces it.
 
 ### Response
 
@@ -260,7 +275,39 @@ Update current authenticated user information (Name and/or Password).
 }
 ```
 
+The response never contains the password, token, or token expiry.
+
+#### Bad Request (400 Bad Request)
+
+Validation failed:
+```json
+{
+  "errors": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "name",
+        "message": "must not be blank"
+      }
+    ]
+  }
+}
+```
+
+Missing or malformed JSON body:
+```json
+{
+  "errors": {
+    "code": "400 BAD_REQUEST",
+    "message": "Request body is missing or malformed"
+  }
+}
+```
+
 #### Unauthorized (401 Unauthorized)
+
+Returned when the `X-API-TOKEN` header is missing or blank, the token is unknown or expired, or the user no longer exists:
 ```json
 {
   "errors": {
@@ -269,6 +316,10 @@ Update current authenticated user information (Name and/or Password).
   }
 }
 ```
+
+#### Unsupported Media Type (415)
+
+Returned when `Content-Type` is not JSON.
 
 ---
 

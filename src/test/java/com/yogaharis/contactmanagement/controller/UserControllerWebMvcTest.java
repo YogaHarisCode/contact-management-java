@@ -1,6 +1,7 @@
 package com.yogaharis.contactmanagement.controller;
 
 import com.yogaharis.contactmanagement.dto.RegisterUserRequest;
+import com.yogaharis.contactmanagement.dto.UpdateUserRequest;
 import com.yogaharis.contactmanagement.dto.UserResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
 import com.yogaharis.contactmanagement.entity.User;
@@ -10,9 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -26,16 +27,19 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Controller slice tests for {@link UserController} using {@code @WebMvcTest}.
  * The service layer is mocked; validation and error responses are verified over HTTP.
  *
- * <p>Get current user is tested through the real {@code UserArgumentResolver}, which looks the
- * user up by token in the mocked {@link UserRepository}.</p>
+ * <p>Get current user and update user are tested through the real {@code UserArgumentResolver}, which
+ * looks the user up by token in the mocked {@link UserRepository}.</p>
  *
  * @author Yoga Harisistianugroho
  */
@@ -60,6 +64,8 @@ public class UserControllerWebMvcTest {
     private static final String INVALID_TOKEN = "Invalid-token";
     private static final String HEADER = "X-API-TOKEN";
     private static final String HASH_PASSWORD = "Hash-password";
+    private static final String NEW_NAME = "Jhon Doe Updated";
+    private static final String NEW_PASSWORD = "NewPassword123";
 
     // ---------------------------------------------------------- REGISTER
 
@@ -68,7 +74,7 @@ public class UserControllerWebMvcTest {
         // arrange
         RegisterUserRequest request = validRegisterRequest();
 
-        Mockito.when(userService.register(Mockito.any(RegisterUserRequest.class)))
+        when(userService.register(any(RegisterUserRequest.class)))
                 .thenAnswer(invocation -> {
                     RegisterUserRequest request1 = invocation.getArgument(0);
 
@@ -91,7 +97,7 @@ public class UserControllerWebMvcTest {
 
         // verify
         ArgumentCaptor<RegisterUserRequest> userArgumentCaptor = ArgumentCaptor.forClass(RegisterUserRequest.class);
-        Mockito.verify(userService).register(userArgumentCaptor.capture());
+        verify(userService).register(userArgumentCaptor.capture());
         assertEquals(request, userArgumentCaptor.getValue());
     }
 
@@ -121,15 +127,15 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getData());
 
-        Mockito.verify(userService, Mockito.never())
-                .register(Mockito.any(RegisterUserRequest.class));
+        verify(userService, never())
+                .register(any(RegisterUserRequest.class));
     }
 
     @Test
     void testRegisterDuplicateUsername() {
         RegisterUserRequest request = validRegisterRequest();
 
-        Mockito.when(userService.register(request))
+        when(userService.register(request))
                 .thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Username already exists"));
 
         WebResponse<Void> response = post(request)
@@ -147,7 +153,7 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getData());
 
-        Mockito.verify(userService)
+        verify(userService)
                 .register(request);
 
     }
@@ -158,10 +164,10 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserSuccess() {
         User user = registeredUser();
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
-        Mockito.when(userService.get(user))
+        when(userService.get(user))
                 .thenReturn(UserResponse.builder().username(user.getUsername()).name(user.getName()).build());
 
         WebResponse<UserResponse> response = getCurrent(VALID_TOKEN)
@@ -179,8 +185,8 @@ public class UserControllerWebMvcTest {
 
         assertNull(response.getErrors());
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService).get(user);
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService).get(user);
     }
 
     /** Checks the raw JSON, since the deserialized DTO could not show extra or leaked fields. */
@@ -188,10 +194,10 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserDoesNotExposeSensitiveFields() {
         User user = registeredUser();
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
-        Mockito.when(userService.get(user))
+        when(userService.get(user))
                 .thenReturn(UserResponse.builder().username(user.getUsername()).name(user.getName()).build());
 
         getCurrent(VALID_TOKEN)
@@ -209,7 +215,7 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserMissingToken() {
         assertUnauthorized(getCurrent(null));
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
     /** An empty or whitespace-only header is rejected like a missing one, without a database lookup. */
@@ -218,31 +224,31 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserBlankToken(String token) {
         assertUnauthorized(getCurrent(token));
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
     @Test
     void testGetCurrentUserInvalidToken() {
-        Mockito.when(userRepository.findByToken(INVALID_TOKEN))
+        when(userRepository.findByToken(INVALID_TOKEN))
                 .thenReturn(Optional.empty());
 
         assertUnauthorized(getCurrent(INVALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(INVALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(INVALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     @Test
     void testGetCurrentUserExpiredToken() {
         User user = registeredUser(Instant.now().minus(Duration.ofSeconds(1)).toEpochMilli());
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
         assertUnauthorized(getCurrent(VALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     /** A token without an expiry time is treated as invalid. */
@@ -250,13 +256,13 @@ public class UserControllerWebMvcTest {
     void testGetCurrentUserNullTokenExpiredAt() {
         User user = registeredUser(null);
 
-        Mockito.when(userRepository.findByToken(VALID_TOKEN))
+        when(userRepository.findByToken(VALID_TOKEN))
                 .thenReturn(Optional.of(user));
 
         assertUnauthorized(getCurrent(VALID_TOKEN));
 
-        Mockito.verify(userRepository).findByToken(VALID_TOKEN);
-        Mockito.verify(userService, Mockito.never()).get(Mockito.any(User.class));
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService, never()).get(any(User.class));
     }
 
     /** {@code /api/users/current} only maps GET, so POST must be rejected before any lookup. */
@@ -279,10 +285,389 @@ public class UserControllerWebMvcTest {
         assertNotNull(response.getErrors());
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED.toString(), response.getErrors().getCode());
 
-        Mockito.verifyNoInteractions(userRepository, userService);
+        verifyNoInteractions(userRepository, userService);
     }
 
+    // ---------------------------------------------------------- UPDATE
+    /** Both fields are sent and the user found by the resolver is passed to the service along with the request. */
+    @Test
+    void testUpdateUserSuccess() {
+        // arrange
+        User user = registeredUser();
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        // the stub only matches if JSON deserialization produced a request equal to the one sent
+        when(userService.update(user, request))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NEW_NAME).build());
+
+        // act
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertNotNull(response.getData());
+        assertEquals(USERNAME, response.getData().getUsername());
+        assertEquals(NEW_NAME, response.getData().getName());
+
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(userService).update(user, request);
+    }
+
+    /** Raw JSON, so fields really are absent (or explicitly null) instead of serialized from the DTO. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"rawUpdateBodies"})
+    void testUpdateRawJsonBodySuccess(String json, UpdateUserRequest expected) {
+        // arrange
+        User user = registeredUser();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(user, expected))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NAME).build());
+
+        // act
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, json)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+        assertNotNull(response.getData());
+        assertEquals(USERNAME, response.getData().getUsername());
+
+        verify(userService).update(user, expected);
+    }
+
+    /** Values exactly at the limits (100 characters, 8 characters, 72 bytes) pass validation. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"boundaryUpdateRequests"})
+    void testUpdateBoundaryValuesAccepted(String scenario, UpdateUserRequest request) {
+        // arrange
+        User user = registeredUser();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        // the body differs per scenario, so the stub matches any request and the exact one is verified afterwards
+        when(userService.update(any(User.class), any(UpdateUserRequest.class)))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NAME).build());
+
+        // act
+        WebResponse<UserResponse> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<UserResponse>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getErrors());
+
+        verify(userService).update(user, request);
+    }
+
+    /**
+     * Each invalid value returns 400 with the offending field and message, and the service is never called.
+     * The token is still looked up first, because authentication runs before validation.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource({"invalidUpdateRequests"})
+    void testUpdateValidationFailed(String scenario, UpdateUserRequest request, String invalidField, String invalidMessage) {
+        // arrange
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
+
+        // act
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
+        assertEquals("Request validation failed", response.getErrors().getMessage());
+        // anyMatch: one invalid value can violate several rules at once (e.g. blank and too short).
+        assertTrue(
+                response.getErrors().getDetails().stream()
+                        .anyMatch(detail ->
+                                detail.getField().equals(invalidField)
+                                        && detail.getMessage().equals(invalidMessage)
+                        )
+        );
+
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verifyNoInteractions(userService);
+    }
+
+    /** When both fields are invalid, each one is reported separately in {@code details}. */
+    @Test
+    void testUpdateValidationFailedOnBothFields() {
+        // arrange
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name("")
+                .password("short")
+                .build();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
+
+        // act
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNotNull(response.getErrors());
+        assertEquals("VALIDATION_ERROR", response.getErrors().getCode());
+
+        Set<String> invalidFields = response.getErrors().getDetails().stream()
+                .map(detail -> detail.getField())
+                .collect(Collectors.toSet());
+
+        assertEquals(Set.of("name", "password"), invalidFields);
+
+        verifyNoInteractions(userService);
+    }
+
+    /** An empty, truncated or non-JSON body is rejected after authentication with the generic 400 message. */
+    @ParameterizedTest(name = "body = [{0}]")
+    @ValueSource(strings = {"", "{", "not-json"})
+    void testUpdateMissingOrMalformedBody(String body) {
+        // arrange
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(registeredUser()));
+
+        // act
+        WebResponse<Void> response = patchCurrent(VALID_TOKEN, body)
+                .expectStatus().isBadRequest()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        // assert
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.BAD_REQUEST.toString(), response.getErrors().getCode());
+        assertEquals("Request body is missing or malformed", response.getErrors().getMessage());
+
+        verifyNoInteractions(userService);
+    }
+
+    /** The {@code consumes} mismatch is rejected while mapping the request, before any token lookup. */
+    @Test
+    void testUpdateUnsupportedMediaType() {
+        WebResponse<Void> response = client.patch()
+                .uri("/api/users/current")
+                .header(HEADER, VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.TEXT_PLAIN)
+                .body("name=" + NEW_NAME)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNSUPPORTED_MEDIA_TYPE.toString(), response.getErrors().getCode());
+
+        verifyNoInteractions(userRepository, userService);
+    }
+
+    /** A missing, empty or whitespace-only header is rejected before any database lookup, like on GET. */
+    @ParameterizedTest(name = "token = [{0}]")
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    void testUpdateMissingOrBlankToken(String token) {
+        assertUnauthorized(patchCurrent(token, UpdateUserRequest.builder().name(NEW_NAME).build()));
+
+        verifyNoInteractions(userRepository, userService);
+    }
+
+    /** A token that no user owns is rejected with 401, and the service is never called. */
+    @Test
+    void testUpdateUnauthorized() {
+        // arrange
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findByToken(INVALID_TOKEN))
+                .thenReturn(Optional.empty());
+
+        // act & assert
+        assertUnauthorized(patchCurrent(INVALID_TOKEN, request));
+
+        verify(userRepository).findByToken(INVALID_TOKEN);
+        verifyNoInteractions(userService);
+    }
+
+    /** Authentication runs before body validation, so an invalid body with a bad token is 401, not 400. */
+    @Test
+    void testUpdateUnauthorizedTakesPrecedenceOverValidation() {
+        // arrange
+        UpdateUserRequest invalidRequest = UpdateUserRequest.builder()
+                .name("")
+                .password("short")
+                .build();
+
+        when(userRepository.findByToken(INVALID_TOKEN))
+                .thenReturn(Optional.empty());
+
+        // act & assert
+        assertUnauthorized(patchCurrent(INVALID_TOKEN, invalidRequest));
+
+        verifyNoInteractions(userService);
+    }
+
+    /** Checks the raw JSON, since the deserialized DTO could not show extra or leaked fields. */
+    @Test
+    void testUpdateUserDoesNotExposeSensitiveFields() {
+        // arrange
+        User user = registeredUser();
+        UpdateUserRequest request = UpdateUserRequest.builder()
+                .name(NEW_NAME)
+                .password(NEW_PASSWORD)
+                .build();
+
+        when(userRepository.findByToken(VALID_TOKEN))
+                .thenReturn(Optional.of(user));
+
+        when(userService.update(user, request))
+                .thenReturn(UserResponse.builder().username(USERNAME).name(NEW_NAME).build());
+
+        // act & assert
+        patchCurrent(VALID_TOKEN, request)
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.data.username").isEqualTo(USERNAME)
+                .jsonPath("$.data.name").isEqualTo(NEW_NAME)
+                .jsonPath("$.data.password").doesNotExist()
+                .jsonPath("$.data.token").doesNotExist()
+                .jsonPath("$.data.tokenExpiredAt").doesNotExist()
+                .jsonPath("$.errors").doesNotExist();
+    }
+
+
     // ---------------------------------------------------------- HELPER
+
+    /** Raw JSON bodies with the request each should deserialize to: empty object, explicit nulls, and a single field. */
+    private static Stream<Arguments> rawUpdateBodies(){
+        return Stream.of(
+                Arguments.of("{}",
+                        UpdateUserRequest.builder().build()),
+                // explicit nulls mean the same as absent fields
+                Arguments.of("{\"name\":null,\"password\":null}",
+                        UpdateUserRequest.builder().build()),
+                Arguments.of("{\"name\":\"" + NEW_NAME + "\"}",
+                        UpdateUserRequest.builder().name(NEW_NAME).build()),
+                Arguments.of("{\"password\":\"" + NEW_PASSWORD + "\"}",
+                        UpdateUserRequest.builder().password(NEW_PASSWORD).build())
+        );
+    }
+
+    /** Valid requests exactly at the size limits. */
+    private static Stream<Arguments> boundaryUpdateRequests(){
+        return Stream.of(
+                Arguments.of("name is exactly 100 characters",
+                        UpdateUserRequest.builder().name("a".repeat(100)).build()),
+                Arguments.of("password is exactly 8 characters",
+                        UpdateUserRequest.builder().password("12345678").build()),
+                Arguments.of("password is exactly 72 bytes (ASCII)",
+                        UpdateUserRequest.builder().password("a".repeat(72)).build()),
+                Arguments.of("password is exactly 72 bytes (multi-byte)",
+                        UpdateUserRequest.builder().password("🚀".repeat(18)).build())
+        );
+    }
+
+    /** Invalid requests with the field and message each should produce (default Bean Validation messages unless the DTO sets one). */
+    private static Stream<Arguments> invalidUpdateRequests(){
+        String over100Chars = "a".repeat(101);
+        String over72Bytes = "🚀".repeat(19); // 19 x 4 bytes = 76 bytes
+
+        return Stream.of(
+                Arguments.of("name is empty",
+                        UpdateUserRequest.builder().name("").build(),
+                        "name",
+                        "must not be blank"),
+                Arguments.of("name is whitespace only",
+                        UpdateUserRequest.builder().name("   ").build(),
+                        "name",
+                        "must not be blank"),
+                Arguments.of("name is longer than 100 characters",
+                        UpdateUserRequest.builder().name(over100Chars).build(),
+                        "name",
+                        "size must be between 0 and 100"),
+                Arguments.of("password is empty",
+                        UpdateUserRequest.builder().password("").build(),
+                        "password",
+                        "must not be blank"),
+                Arguments.of("password is whitespace only",
+                        UpdateUserRequest.builder().password("        ").build(),
+                        "password",
+                        "must not be blank"),
+                Arguments.of("password is shorter than 8 characters",
+                        UpdateUserRequest.builder().password("1234567").build(),
+                        "password",
+                        "size must be between 8 and 2147483647"),
+                Arguments.of("password is longer than 72 bytes (ASCII)",
+                        UpdateUserRequest.builder().password(over100Chars).build(),
+                        "password",
+                        "must not exceed 72 bytes"),
+                Arguments.of("password is longer than 72 bytes (multi-byte)",
+                        UpdateUserRequest.builder().password(over72Bytes).build(),
+                        "password",
+                        "must not exceed 72 bytes")
+        );
+    }
+
+    /** Calls {@code PATCH /api/users/current}. A {@code null} token omits the header entirely. */
+    private RestTestClient.ResponseSpec patchCurrent(String token, Object body){
+        return client.patch()
+                .uri("/api/users/current")
+                .accept(MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.set(HEADER, token);
+                    }
+                })
+                .body(body)
+                .exchange();
+    }
 
     /** Calls {@code GET /api/users/current}. A {@code null} token omits the header entirely. */
     private RestTestClient.ResponseSpec getCurrent(String token){
