@@ -7,10 +7,7 @@ import com.yogaharis.contactmanagement.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
-import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,9 +20,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
- * Unit test for {@link AuthService#login(LoginUserRequest)}.
+ *  * Unit test for {@link AuthService#login(LoginUserRequest)} and {@link AuthService#logout(User)}.
  *
  * <p>Runs without a Spring context: {@link UserRepository}, {@link PasswordEncoder} and
  * {@link Clock} are Mockito mocks. The clock is mocked so the token expiry can be asserted exactly.</p>
@@ -58,10 +56,10 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         // AuthService hashes a dummy password in its constructor (timing equalization).
-        Mockito.lenient().when(passwordEncoder.encode(Mockito.anyString())).thenReturn(DUMMY_HASH);
+        lenient().when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, passwordEncoder, clock);
         // Forget the encode() call made by the constructor, so verifyNoMoreInteractions only sees login().
-        Mockito.clearInvocations(passwordEncoder);
+        clearInvocations(passwordEncoder);
     }
 
     // ---------------------------------------------------------- LOGIN
@@ -79,15 +77,15 @@ class AuthServiceTest {
                 .build();
         User user = createUser();
 
-        Mockito.when(clock.instant()).thenReturn(LOGIN_TIME);
-        Mockito.when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
-        Mockito.when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(true);
+        when(clock.instant()).thenReturn(LOGIN_TIME);
+        when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(true);
 
         // act
         TokenResponse response = authService.login(request);
 
         // assert
-        InOrder inOrder = Mockito.inOrder(userRepository, passwordEncoder);
+        InOrder inOrder = inOrder(userRepository, passwordEncoder);
         inOrder.verify(userRepository).findById(request.getUsername());
         inOrder.verify(passwordEncoder).matches(request.getPassword(), HASH_PASSWORD);
 
@@ -116,7 +114,7 @@ class AuthServiceTest {
                 .password("Rahasia123")
                 .build();
 
-        Mockito.when(userRepository.findById(request.getUsername())).thenReturn(Optional.empty());
+        when(userRepository.findById(request.getUsername())).thenReturn(Optional.empty());
 
         // act
         ResponseStatusException exception =
@@ -126,11 +124,11 @@ class AuthServiceTest {
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
         assertEquals(UNAUTHORIZED_MESSAGE, exception.getReason());
 
-        Mockito.verify(userRepository).findById(request.getUsername());
-        Mockito.verifyNoMoreInteractions(userRepository);
-        Mockito.verify(passwordEncoder).matches(request.getPassword(), DUMMY_HASH);
-        Mockito.verifyNoMoreInteractions(passwordEncoder);
-        Mockito.verifyNoInteractions(clock);
+        verify(userRepository).findById(request.getUsername());
+        verifyNoMoreInteractions(userRepository);
+        verify(passwordEncoder).matches(request.getPassword(), DUMMY_HASH);
+        verifyNoMoreInteractions(passwordEncoder);
+        verifyNoInteractions(clock);
     }
 
     /**
@@ -145,9 +143,9 @@ class AuthServiceTest {
                 .password("Rahasia123")
                 .build();
 
-        Mockito.when(userRepository.findById(request.getUsername())).thenReturn(Optional.empty());
+        when(userRepository.findById(request.getUsername())).thenReturn(Optional.empty());
         // Simulates a match on the dummy hash, which should never grant access.
-        Mockito.when(passwordEncoder.matches(request.getPassword(), DUMMY_HASH)).thenReturn(true);
+        when(passwordEncoder.matches(request.getPassword(), DUMMY_HASH)).thenReturn(true);
 
         // act
         ResponseStatusException exception =
@@ -157,9 +155,9 @@ class AuthServiceTest {
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
         assertEquals(UNAUTHORIZED_MESSAGE, exception.getReason());
 
-        Mockito.verify(userRepository).findById(request.getUsername());
-        Mockito.verifyNoMoreInteractions(userRepository);
-        Mockito.verifyNoInteractions(clock);
+        verify(userRepository).findById(request.getUsername());
+        verifyNoMoreInteractions(userRepository);
+        verifyNoInteractions(clock);
     }
 
     /**
@@ -175,8 +173,8 @@ class AuthServiceTest {
                 .build();
         User user = createUser();
 
-        Mockito.when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
-        Mockito.when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(false);
+        when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(false);
 
         // act
         ResponseStatusException exception =
@@ -186,11 +184,11 @@ class AuthServiceTest {
         assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
         assertEquals(UNAUTHORIZED_MESSAGE, exception.getReason());
 
-        Mockito.verify(userRepository).findById(request.getUsername());
-        Mockito.verifyNoMoreInteractions(userRepository);
-        Mockito.verify(passwordEncoder).matches(request.getPassword(), HASH_PASSWORD);
-        Mockito.verifyNoMoreInteractions(passwordEncoder);
-        Mockito.verifyNoInteractions(clock);
+        verify(userRepository).findById(request.getUsername());
+        verifyNoMoreInteractions(userRepository);
+        verify(passwordEncoder).matches(request.getPassword(), HASH_PASSWORD);
+        verifyNoMoreInteractions(passwordEncoder);
+        verifyNoInteractions(clock);
 
         assertNull(user.getToken());
         assertNull(user.getTokenExpiredAt());
@@ -212,9 +210,9 @@ class AuthServiceTest {
         Instant secondLogin = LOGIN_TIME.plus(Duration.ofDays(1));
 
         // The first call returns firstLogin, the second call returns secondLogin.
-        Mockito.when(clock.instant()).thenReturn(firstLogin, secondLogin);
-        Mockito.when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
-        Mockito.when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(true);
+        when(clock.instant()).thenReturn(firstLogin, secondLogin);
+        when(userRepository.findById(request.getUsername())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(request.getPassword(), HASH_PASSWORD)).thenReturn(true);
 
         // act
         TokenResponse first = authService.login(request);
@@ -228,7 +226,131 @@ class AuthServiceTest {
         assertEquals(second.getTokenExpiredAt(), user.getTokenExpiredAt());
     }
 
+    // ---------------------------------------------------------- LOGOUT
+
+    @Test
+    void testLogoutSuccess() {
+        // arrange
+        User user = createUserWithToken("Valid-Token");
+
+        when(userRepository.findById("JohnDoe")).thenReturn(Optional.of(user));
+
+        // act
+        authService.logout(user);
+
+        // assert
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        InOrder inOrder = inOrder(userRepository);
+        inOrder.verify(userRepository).findById("JohnDoe");
+        inOrder.verify(userRepository).save(userCaptor.capture());
+        verifyNoMoreInteractions(userRepository);
+        verifyNoInteractions(passwordEncoder, clock);
+
+        User saved = userCaptor.getValue();
+        assertNull(saved.getToken());
+        assertNull(saved.getTokenExpiredAt());
+        assertEquals("JohnDoe", saved.getUsername());
+        assertEquals(HASH_PASSWORD, saved.getPassword());
+        assertEquals("John Doe", saved.getName());
+    }
+
+    @Test
+    void testLogoutUsesManagedEntityNotDetachedArgument() {
+        // arrange
+        User detachedUser = createUserWithToken("Valid-Token");
+        detachedUser.setPassword("Old-Hash-Password");
+
+        User managedUser = createUserWithToken("Valid-Token");
+        managedUser.setPassword("New-Hash-Password");
+        managedUser.setName("John Doe Updated");
+
+        when(userRepository.findById("JohnDoe")).thenReturn(Optional.of(managedUser));
+
+        // act
+        authService.logout(detachedUser);
+
+        // assert
+        assertNull(managedUser.getToken());
+        assertNull(managedUser.getTokenExpiredAt());
+        assertEquals("New-Hash-Password", managedUser.getPassword());
+        assertEquals("John Doe Updated", managedUser.getName());
+        assertEquals("Valid-Token", detachedUser.getToken());
+        assertNotNull(detachedUser.getTokenExpiredAt());
+
+        verify(userRepository).findById("JohnDoe");
+        verify(userRepository).save(same(managedUser));
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void testLogoutUserNotFound() {
+        // arrange
+        User user = createUserWithToken("Valid-Token");
+
+        when(userRepository.findById("JohnDoe")).thenReturn(Optional.empty());
+
+        // act
+        ResponseStatusException exception =
+                assertThrows(ResponseStatusException.class, () -> authService.logout(user));
+
+        // assert
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals("Unauthorized", exception.getReason());
+
+        verify(userRepository).findById("JohnDoe");
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void testLogoutRejectedWhenTokenWasReplacedByNewLogin() {
+        // arrange
+        User staleUser = createUserWithToken("Old-Token");
+        User managedUser = createUserWithToken("New-Token");
+
+        when(userRepository.findById("JohnDoe")).thenReturn(Optional.of(managedUser));
+
+        // act
+        ResponseStatusException exception =
+                assertThrows(ResponseStatusException.class, () -> authService.logout(staleUser));
+
+        // assert
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals("Unauthorized", exception.getReason());
+        assertEquals("New-Token", managedUser.getToken());
+        assertNotNull(managedUser.getTokenExpiredAt());
+
+        verify(userRepository).findById("JohnDoe");
+        verifyNoMoreInteractions(userRepository);
+    }
+
+    @Test
+    void testLogoutRejectedWhenTokenAlreadyCleared() {
+        // arrange
+        User staleUser = createUserWithToken("Old-Token");
+        User managedUser = createUser();
+
+        when(userRepository.findById("JohnDoe")).thenReturn(Optional.of(managedUser));
+
+        // act
+        ResponseStatusException exception =
+                assertThrows(ResponseStatusException.class, () -> authService.logout(staleUser));
+
+        // assert
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals("Unauthorized", exception.getReason());
+
+        verify(userRepository).findById("JohnDoe");
+        verifyNoMoreInteractions(userRepository);
+    }
+
     // ---------------------------------------------------------- HELPER
+
+    private User createUserWithToken(String token) {
+        User user = createUser();
+        user.setToken(token);
+        user.setTokenExpiredAt(LOGIN_TIME.plus(Duration.ofDays(1)).toEpochMilli());
+        return user;
+    }
 
     /**
      * Creates an existing user as it would be loaded from the database, with no token yet.

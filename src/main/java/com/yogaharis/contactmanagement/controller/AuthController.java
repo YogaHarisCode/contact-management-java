@@ -3,13 +3,12 @@ package com.yogaharis.contactmanagement.controller;
 import com.yogaharis.contactmanagement.dto.LoginUserRequest;
 import com.yogaharis.contactmanagement.dto.TokenResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
+import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * REST controller for authentication endpoints.
@@ -18,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequiredArgsConstructor
+@RequestMapping(path = "/api/auth")
 public class AuthController {
 
     private final AuthService authService;
@@ -33,12 +33,21 @@ public class AuthController {
      * @return the standard response envelope whose {@code data} holds the token and its expiry
      */
     @PostMapping(
-            path = "/api/auth/login",
+            path = "/login",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public WebResponse<TokenResponse> login(@Valid @RequestBody LoginUserRequest request){
         TokenResponse response = authService.login(request);
         return WebResponse.<TokenResponse>builder().data(response).build();
+    }
+
+    @DeleteMapping(
+            path = "/logout",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public WebResponse<String> logout(User user){
+        authService.logout(user);
+        return WebResponse.<String>builder().data("OK").build();
     }
 }

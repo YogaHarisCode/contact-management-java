@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +30,7 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String USERNAME_OR_PASSWORD_WRONG = "Username or password wrong";
+    private static final String UNAUTHORIZED = "Unauthorized";
     // Password hashed once at startup to build dummyPasswordHash; its value is irrelevant.
     private static final String DUMMY_PASSWORD = "timing-equalizer";
     private static final Duration TOKEN_VALIDITY = Duration.ofDays(30);
@@ -87,11 +89,11 @@ public class AuthService {
         if (found.isEmpty()) {
             // The username does not exist, so it may be a mistyped password: log only its length.
             log.warn("Login user rejected: reason=user_not_found, usernameLength={}", request.getUsername().length());
-            throw invalidCredentials();
+            throw invalidCredentials(USERNAME_OR_PASSWORD_WRONG);
         }
         if (!passwordMatches) {
             log.warn("Login user rejected: reason=password_mismatch, username={}", request.getUsername());
-            throw invalidCredentials();
+            throw invalidCredentials(USERNAME_OR_PASSWORD_WRONG);
         }
 
         // A fresh token on every login: it replaces the previous one, which stops working immediately.
@@ -107,12 +109,35 @@ public class AuthService {
                 .build();
     }
 
+    @Transactional
+    public void logout(User user) {
+        String username = user.getUsername();
+        log.debug("Logout attempt received: username={}", username);
+
+        User managedUser = userRepository.findById(username)
+                .orElseThrow(() -> {
+                    log.warn("Logout rejected: reason=user_not_found, username={}", username);
+                    return invalidCredentials(UNAUTHORIZED);
+                });
+
+        if (!Objects.equals(user.getToken(), managedUser.getToken())) {
+            log.warn("Logout rejected: reason=token_replaced, username={}", username);
+            throw invalidCredentials(UNAUTHORIZED);
+        }
+
+        managedUser.setToken(null);
+        managedUser.setTokenExpiredAt(null);
+        userRepository.save(managedUser);
+        log.info("Logout successful: username={}", username);
+    }
+
     /**
-     * Always returns the same generic 401, so clients cannot tell a missing user from a wrong password.
+     * Always returns the same generic 401 for a given message, so clients cannot tell a missing user from a wrong password.
      *
-     * @return a {@code 401 UNAUTHORIZED} exception with the message "Username or password wrong"
+     * @param message the message returned to the client
+     * @return a {@code 401 UNAUTHORIZED} exception with the given message
      */
-    private ResponseStatusException invalidCredentials() {
-        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, USERNAME_OR_PASSWORD_WRONG);
+    private ResponseStatusException invalidCredentials(String message) {
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
     }
 }

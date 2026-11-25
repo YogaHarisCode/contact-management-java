@@ -4,6 +4,7 @@ import com.yogaharis.contactmanagement.dto.ErrorDetail;
 import com.yogaharis.contactmanagement.dto.LoginUserRequest;
 import com.yogaharis.contactmanagement.dto.TokenResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
+import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
 import com.yogaharis.contactmanagement.service.AuthService;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -22,6 +22,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -31,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 
 /**
  * Web slice test for {@link AuthController} ({@code POST /api/auth/login}).
@@ -69,7 +73,7 @@ public class AuthControllerWebMvcTest {
                 .password("Rahasia123")
                 .build();
 
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenReturn(new TokenResponse(VALID_TOKEN, TOKEN_EXPIRED_AT));
 
         WebResponse<TokenResponse> response = postLogin(request)
@@ -85,7 +89,7 @@ public class AuthControllerWebMvcTest {
         assertEquals(VALID_TOKEN, response.getData().getToken());
         assertEquals(TOKEN_EXPIRED_AT, response.getData().getTokenExpiredAt());
 
-        Mockito.verify(authService).login(request);
+        verify(authService).login(request);
     }
 
     /** The raw JSON of a success response has the expected field names and no {@code errors} key. */
@@ -96,7 +100,7 @@ public class AuthControllerWebMvcTest {
                 .password("Rahasia123")
                 .build();
 
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenReturn(new TokenResponse(VALID_TOKEN, TOKEN_EXPIRED_AT));
 
         // The raw body is read as a String because null fields must be absent from the JSON, not just null.
@@ -132,7 +136,7 @@ public class AuthControllerWebMvcTest {
         assertEquals(field, response.getErrors().getDetails().getFirst().getField());
         assertEquals(message, response.getErrors().getDetails().getFirst().getMessage());
 
-        Mockito.verify(authService, Mockito.never()).login(Mockito.any());
+        verify(authService, never()).login(any());
     }
 
     /** When both fields are invalid, the error details list both of them. */
@@ -154,20 +158,20 @@ public class AuthControllerWebMvcTest {
                 .collect(Collectors.toSet());
         assertEquals(Set.of("username", "password"), fields);
 
-        Mockito.verify(authService, Mockito.never()).login(Mockito.any());
+        verify(authService, never()).login(any());
     }
 
     /** Values exactly on the allowed limits (100 characters, 72 bytes) pass validation. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("validBoundaryLoginRequests")
     void testLoginBoundaryValuesAccepted(String scenario, LoginUserRequest request) {
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenReturn(new TokenResponse(VALID_TOKEN, TOKEN_EXPIRED_AT));
 
         postLogin(request)
                 .expectStatus().isOk();
 
-        Mockito.verify(authService).login(request);
+        verify(authService).login(request);
     }
 
     /** A 401 thrown by the service is returned as the standard error response. */
@@ -178,7 +182,7 @@ public class AuthControllerWebMvcTest {
                 .password("passwordsalah")
                 .build();
 
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Username or password wrong"));
 
         WebResponse<TokenResponse> response = postLogin(request)
@@ -195,7 +199,7 @@ public class AuthControllerWebMvcTest {
         assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
         assertEquals("Username or password wrong", response.getErrors().getMessage());
 
-        Mockito.verify(authService).login(request);
+        verify(authService).login(request);
     }
 
     /** The raw JSON of a 401 response has no {@code data} key and no {@code details} key. */
@@ -206,7 +210,7 @@ public class AuthControllerWebMvcTest {
                 .password("passwordsalah")
                 .build();
 
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Username or password wrong"));
 
         String body = postLogin(request)
@@ -239,7 +243,7 @@ public class AuthControllerWebMvcTest {
         assertEquals(HttpStatus.BAD_REQUEST.toString(), response.getErrors().getCode());
         assertNotNull(response.getErrors().getMessage());
 
-        Mockito.verifyNoInteractions(authService);
+        verifyNoInteractions(authService);
     }
 
     /** The endpoint only consumes JSON, so a plain text body gives 415. */
@@ -253,7 +257,7 @@ public class AuthControllerWebMvcTest {
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
 
-        Mockito.verifyNoInteractions(authService);
+        verifyNoInteractions(authService);
     }
 
     /** An unexpected exception gives a generic 500 that does not leak the exception message. */
@@ -264,7 +268,7 @@ public class AuthControllerWebMvcTest {
                 .password("Rahasia123")
                 .build();
 
-        Mockito.when(authService.login(request))
+        when(authService.login(request))
                 .thenThrow(new RuntimeException("database down"));
 
         WebResponse<Void> response = postLogin(request)
@@ -282,7 +286,184 @@ public class AuthControllerWebMvcTest {
         assertFalse(String.valueOf(response.getErrors().getMessage()).contains("database down"));
     }
 
+    // ---------------------------------------------------------- LOGOUT
+
+    @Test
+    void testLogoutSuccess() {
+        User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        WebResponse<String> response = deleteLogout(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("OK", response.getData());
+        assertNull(response.getErrors());
+
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(authService).logout(user);
+    }
+
+    @Test
+    void testLogoutSuccessResponseOmitsErrors() {
+        User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        String body = deleteLogout(VALID_TOKEN)
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(body);
+        assertTrue(body.contains("\"data\""));
+        assertFalse(body.contains("\"errors\""));
+        assertFalse(body.contains("password"));
+        assertFalse(body.contains(VALID_TOKEN));
+    }
+
+    @Test
+    void testLogoutWithoutHeader() {
+        assertUnauthorized(deleteLogoutWithoutHeader());
+
+        verify(userRepository, never()).findByToken(anyString());
+        verify(authService, never()).logout(any(User.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void testLogoutBlankToken(String token) {
+        assertUnauthorized(deleteLogout(token));
+
+        verify(userRepository, never()).findByToken(anyString());
+        verify(authService, never()).logout(any(User.class));
+    }
+
+    @Test
+    void testLogoutUnknownToken() {
+        when(userRepository.findByToken("Unknown-Token")).thenReturn(Optional.empty());
+
+        assertUnauthorized(deleteLogout("Unknown-Token"));
+
+        verify(userRepository).findByToken("Unknown-Token");
+        verify(authService, never()).logout(any(User.class));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidExpirationUsers")
+    void testLogoutWithInvalidExpiration(String scenario, User user) {
+        when(userRepository.findByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+
+        assertUnauthorized(deleteLogout(VALID_TOKEN));
+
+        verify(userRepository).findByToken(VALID_TOKEN);
+        verify(authService, never()).logout(any(User.class));
+    }
+
+    @Test
+    void testLogoutRejectedByService() {
+        User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+        doThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized"))
+                .when(authService).logout(user);
+
+        assertUnauthorized(deleteLogout(VALID_TOKEN));
+
+        verify(authService).logout(user);
+    }
+
+    @Test
+    void testLogoutUnexpectedError() {
+        User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        when(userRepository.findByToken(VALID_TOKEN)).thenReturn(Optional.of(user));
+        doThrow(new RuntimeException("database down")).when(authService).logout(user);
+
+        WebResponse<Void> response = deleteLogout(VALID_TOKEN)
+                .expectStatus().isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR.toString(), response.getErrors().getCode());
+        assertFalse(String.valueOf(response.getErrors().getMessage()).contains("database down"));
+    }
+
+    @Test
+    void testLogoutMethodNotAllowed() {
+        client.post()
+                .uri("/api/auth/logout")
+                .header("X-API-TOKEN", VALID_TOKEN)
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange()
+                .expectStatus().isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+
+        verifyNoInteractions(authService);
+        verifyNoInteractions(userRepository);
+    }
+
     // ---------------------------------------------------------- HELPER
+
+    private static User createUserWithToken(Long tokenExpiredAt) {
+        User user = new User();
+        user.setUsername("JohnDoe");
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(AuthControllerWebMvcTest.VALID_TOKEN);
+        user.setTokenExpiredAt(tokenExpiredAt);
+        return user;
+    }
+
+    private static Stream<Arguments> invalidExpirationUsers() {
+        return Stream.of(
+                Arguments.of("token is expired",
+                        createUserWithToken(Instant.now().minus(Duration.ofHours(1)).toEpochMilli())),
+                Arguments.of("token has no expiry",
+                        createUserWithToken(null))
+        );
+    }
+
+    private RestTestClient.ResponseSpec deleteLogout(String token) {
+        return client.delete()
+                .uri("/api/auth/logout")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange();
+    }
+
+    private RestTestClient.ResponseSpec deleteLogoutWithoutHeader() {
+        return client.delete()
+                .uri("/api/auth/logout")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange();
+    }
+
+    private void assertUnauthorized(RestTestClient.ResponseSpec spec) {
+        WebResponse<Void> response = spec
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
+        assertEquals("Unauthorized", response.getErrors().getMessage());
+        assertNull(response.getErrors().getDetails());
+    }
 
     /**
      * Sends a JSON {@code POST /api/auth/login}.
