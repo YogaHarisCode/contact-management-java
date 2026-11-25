@@ -5,11 +5,13 @@ import com.yogaharis.contactmanagement.dto.TokenResponse;
 import com.yogaharis.contactmanagement.dto.WebResponse;
 import com.yogaharis.contactmanagement.entity.User;
 import com.yogaharis.contactmanagement.repository.UserRepository;
+import com.yogaharis.contactmanagement.service.AuthService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,21 +21,18 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration test for the login flow ({@code POST /api/auth/login}), from HTTP request to database.
+ * Integration test for the login and logout flows ({@code POST /api/auth/login} and
+ * {@code DELETE /api/auth/logout}), from HTTP request to database.
  *
  * <p>Uses the full Spring context with the {@code test} profile, so it runs against the
  * {@code contact_management_test} database with the real password encoder and system clock.
@@ -58,6 +57,10 @@ public class AuthControllerTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    // Called directly only by the stale-user logout regression test; that condition cannot be made deterministic over HTTP.
+    @Autowired
+    private AuthService authService;
 
     @BeforeEach
     void setUp() {
@@ -222,7 +225,270 @@ public class AuthControllerTest {
         assertNull(other.getTokenExpiredAt());
     }
 
+    // ---------------------------------------------------------- LOGOUT
+
+    /**
+     * Logout with a valid token returns 200 "OK" and clears the token and expiry in the database,
+     * while the name and password hash stay unchanged.
+     */
+    @Test
+    void testLogoutSuccess() {
+        saveUserWithToken("JohnDoe", "Valid-Token", Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
+
+        WebResponse<String> response = deleteLogout("Valid-Token")
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<WebResponse<String>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertEquals("OK", response.getData());
+        assertNull(response.getErrors());
+
+        User userDb = userRepository.findById("JohnDoe").orElseThrow();
+        assertNull(userDb.getToken());
+        assertNull(userDb.getTokenExpiredAt());
+        assertEquals("John Doe", userDb.getName());
+        assertEquals("Hash-Password", userDb.getPassword());
+    }
+
+    /** After logout, the same token is rejected with 401 by a protected endpoint ({@code GET /api/users/current}). */
+    @Test
+    void testLogoutInvalidatesTokenOnProtectedEndpoint() {
+        registerUserDummy("JohnDoe");
+        String token = loginAndGetToken(loginRequest());
+
+        getCurrentUser(token).expectStatus().isOk();
+        deleteLogout(token).expectStatus().isOk();
+
+        assertUnauthorized(getCurrentUser(token));
+    }
+
+    /** After logout, a new login issues a new working token, and the old token stays rejected. */
+    @Test
+    void testLogoutThenLoginIssuesNewValidToken() {
+        registerUserDummy("JohnDoe");
+        LoginUserRequest request = loginRequest();
+
+        String firstToken = loginAndGetToken(request);
+        deleteLogout(firstToken).expectStatus().isOk();
+        String secondToken = loginAndGetToken(request);
+
+        assertNotEquals(firstToken, secondToken);
+        getCurrentUser(secondToken).expectStatus().isOk();
+        assertUnauthorized(getCurrentUser(firstToken));
+    }
+
+    /** Logging out twice with the same token: the second attempt gives 401 because the token is gone. */
+    @Test
+    void testLogoutTwiceRejectsSecondAttempt() {
+        registerUserDummy("JohnDoe");
+        String token = loginAndGetToken(loginRequest());
+
+        deleteLogout(token).expectStatus().isOk();
+
+        assertUnauthorized(deleteLogout(token));
+    }
+
+    /** Logout only clears the token of the user who logged out; another user keeps token and expiry. */
+    @Test
+    void testLogoutOnlyClearsAuthenticatedUser() {
+        long expiredAt = Instant.now().plus(Duration.ofDays(1)).toEpochMilli();
+        saveUserWithToken("JohnDoe", "John-Token", expiredAt);
+        saveUserWithToken("JaneDoe", "Jane-Token", expiredAt);
+
+        deleteLogout("John-Token").expectStatus().isOk();
+
+        User john = userRepository.findById("JohnDoe").orElseThrow();
+        assertNull(john.getToken());
+        assertNull(john.getTokenExpiredAt());
+
+        User jane = userRepository.findById("JaneDoe").orElseThrow();
+        assertEquals("Jane-Token", jane.getToken());
+        assertEquals(expiredAt, jane.getTokenExpiredAt());
+    }
+
+    /**
+     * A token replaced by a newer login is rejected with 401 and the newer token stays stored.
+     * Here the resolver already rejects the old token as unknown.
+     */
+    @Test
+    void testLogoutWithReplacedTokenKeepsNewToken() {
+        registerUserDummy("JohnDoe");
+        LoginUserRequest request = loginRequest();
+
+        String firstToken = loginAndGetToken(request);
+        String secondToken = loginAndGetToken(request);
+
+        assertUnauthorized(deleteLogout(firstToken));
+
+        assertEquals(secondToken, userRepository.findById("JohnDoe").orElseThrow().getToken());
+    }
+
+    /**
+     * Regression test: a stale user (loaded before another login replaced the token) must not revoke the
+     * newer token. The service is called directly with that user, because the race cannot be made
+     * deterministic over HTTP.
+     */
+    @Test
+    void testLogoutWithStaleUserDoesNotRevokeNewToken() {
+        registerUserDummy("JohnDoe");
+        LoginUserRequest request = loginRequest();
+
+        String firstToken = loginAndGetToken(request);
+        User staleUser = userRepository.findByToken(firstToken).orElseThrow();
+        String secondToken = loginAndGetToken(request);
+
+        ResponseStatusException exception =
+                assertThrows(ResponseStatusException.class, () -> authService.logout(staleUser));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        User userDb = userRepository.findById("JohnDoe").orElseThrow();
+        assertEquals(secondToken, userDb.getToken());
+        assertNotNull(userDb.getTokenExpiredAt());
+    }
+
+    /** A missing {@code X-API-TOKEN} header gives 401. */
+    @Test
+    void testLogoutWithoutHeader() {
+        assertUnauthorized(deleteLogoutWithoutHeader());
+    }
+
+    /** An empty or whitespace-only token gives 401. */
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void testLogoutBlankToken(String token) {
+        assertUnauthorized(deleteLogout(token));
+    }
+
+    /** An unknown token gives 401 and the stored token of an existing user is not touched. */
+    @Test
+    void testLogoutUnknownToken() {
+        long expiredAt = Instant.now().plus(Duration.ofDays(1)).toEpochMilli();
+        saveUserWithToken("JohnDoe", "John-Token", expiredAt);
+
+        assertUnauthorized(deleteLogout("Unknown-Token"));
+
+        assertEquals("John-Token", userRepository.findById("JohnDoe").orElseThrow().getToken());
+    }
+
+    /** An expired token or a token without expiry gives 401 and the stored token and expiry stay unchanged. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidExpirations")
+    void testLogoutWithInvalidExpiration(String scenario, Long tokenExpiredAt) {
+        saveUserWithToken("JohnDoe", "Valid-Token", tokenExpiredAt);
+
+        assertUnauthorized(deleteLogout("Valid-Token"));
+
+        User userDb = userRepository.findById("JohnDoe").orElseThrow();
+        assertEquals("Valid-Token", userDb.getToken());
+        assertEquals(tokenExpiredAt, userDb.getTokenExpiredAt());
+    }
+
     // ---------------------------------------------------------- HELPER
+
+    /**
+     * Token expiry values that the resolver must reject, as {@code (scenario, tokenExpiredAt)}.
+     *
+     * @return the arguments for {@code testLogoutWithInvalidExpiration}
+     */
+    private static Stream<Arguments> invalidExpirations() {
+        return Stream.of(
+                Arguments.of("token is expired", Instant.now().minus(Duration.ofHours(1)).toEpochMilli()),
+                Arguments.of("token has no expiry", null)
+        );
+    }
+
+    /**
+     * Creates a login request for {@code JohnDoe} with {@code RAW_PASSWORD}.
+     *
+     * @return the login request
+     */
+    private LoginUserRequest loginRequest() {
+        return LoginUserRequest.builder()
+                .username("JohnDoe")
+                .password(RAW_PASSWORD)
+                .build();
+    }
+
+    /**
+     * Saves a user directly through the repository with a fixed token, so the test can use a known token.
+     * The password is a plain placeholder, not a real hash, so this user cannot log in.
+     *
+     * @param username       the username of the user to save
+     * @param token          the token to store
+     * @param tokenExpiredAt the token expiry in epoch milliseconds, or {@code null} for no expiry
+     */
+    private void saveUserWithToken(String username, String token, Long tokenExpiredAt) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("Hash-Password");
+        user.setName("John Doe");
+        user.setToken(token);
+        user.setTokenExpiredAt(tokenExpiredAt);
+        userRepository.save(user);
+    }
+
+    /**
+     * Sends {@code DELETE /api/auth/logout} with the given token header.
+     *
+     * @param token the value of the {@code X-API-TOKEN} header
+     * @return the response spec to assert on
+     */
+    private RestTestClient.ResponseSpec deleteLogout(String token) {
+        return client.delete()
+                .uri("/api/auth/logout")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange();
+    }
+
+    /**
+     * Sends {@code DELETE /api/auth/logout} without the {@code X-API-TOKEN} header.
+     *
+     * @return the response spec to assert on
+     */
+    private RestTestClient.ResponseSpec deleteLogoutWithoutHeader() {
+        return client.delete()
+                .uri("/api/auth/logout")
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange();
+    }
+
+    /**
+     * Sends {@code GET /api/users/current} with the given token, to check whether the token still works.
+     *
+     * @param token the value of the {@code X-API-TOKEN} header
+     * @return the response spec to assert on
+     */
+    private RestTestClient.ResponseSpec getCurrentUser(String token) {
+        return client.get()
+                .uri("/api/users/current")
+                .header("X-API-TOKEN", token)
+                .accept(MediaType.APPLICATION_JSON)
+                .exchange();
+    }
+
+    /**
+     * Asserts the standard 401 response: no {@code data}, code {@code 401 UNAUTHORIZED} and message "Unauthorized".
+     *
+     * @param spec the response to check
+     */
+    private void assertUnauthorized(RestTestClient.ResponseSpec spec) {
+        WebResponse<Void> response = spec
+                .expectStatus().isUnauthorized()
+                .expectBody(new ParameterizedTypeReference<WebResponse<Void>>() {
+                })
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        assertNull(response.getData());
+        assertNotNull(response.getErrors());
+        assertEquals(HttpStatus.UNAUTHORIZED.toString(), response.getErrors().getCode());
+        assertEquals("Unauthorized", response.getErrors().getMessage());
+    }
 
     /**
      * Invalid requests as {@code (scenario, request, expected field, expected message)}.

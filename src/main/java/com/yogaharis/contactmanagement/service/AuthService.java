@@ -13,14 +13,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Handles user authentication: checks credentials and issues an API token.
+ * Handles user authentication: checks credentials, issues an API token on login and revokes it on logout.
  *
  * <p>A token is a random UUID valid for 30 days. It is stored on the user's row, so a user
- * has at most one active token at a time.</p>
+ * has at most one active token at a time. Logging out clears the token and its expiry.</p>
  *
  * @author Yoga Harisistianugroho
  */
@@ -29,6 +30,7 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String USERNAME_OR_PASSWORD_WRONG = "Username or password wrong";
+    private static final String UNAUTHORIZED = "Unauthorized";
     // Password hashed once at startup to build dummyPasswordHash; its value is irrelevant.
     private static final String DUMMY_PASSWORD = "timing-equalizer";
     private static final Duration TOKEN_VALIDITY = Duration.ofDays(30);
@@ -87,11 +89,11 @@ public class AuthService {
         if (found.isEmpty()) {
             // The username does not exist, so it may be a mistyped password: log only its length.
             log.warn("Login user rejected: reason=user_not_found, usernameLength={}", request.getUsername().length());
-            throw invalidCredentials();
+            throw invalidCredentials(USERNAME_OR_PASSWORD_WRONG);
         }
         if (!passwordMatches) {
             log.warn("Login user rejected: reason=password_mismatch, username={}", request.getUsername());
-            throw invalidCredentials();
+            throw invalidCredentials(USERNAME_OR_PASSWORD_WRONG);
         }
 
         // A fresh token on every login: it replaces the previous one, which stops working immediately.
@@ -108,11 +110,50 @@ public class AuthService {
     }
 
     /**
-     * Always returns the same generic 401, so clients cannot tell a missing user from a wrong password.
+     * Revokes the API token of a user, so the token can no longer be used.
      *
-     * @return a {@code 401 UNAUTHORIZED} exception with the message "Username or password wrong"
+     * <p>The {@code user} argument comes from {@code UserArgumentResolver} and is detached, so it may be
+     * stale. The user is therefore reloaded inside the transaction, and the reloaded entity is the one that
+     * is changed and saved. Its token and token expiry are cleared only if the token still equals the one
+     * that authenticated this request. If a newer login replaced it in the meantime, the request is rejected
+     * so the newer token is not revoked by mistake.</p>
+     *
+     * @param user the authenticated user resolved from the {@code X-API-TOKEN} header
+     * @throws ResponseStatusException with status {@code 401 UNAUTHORIZED} and the message "Unauthorized"
+     *                                 when the user no longer exists or the token was already replaced
      */
-    private ResponseStatusException invalidCredentials() {
-        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, USERNAME_OR_PASSWORD_WRONG);
+    @Transactional
+    public void logout(User user) {
+        String username = user.getUsername();
+        log.debug("Logout attempt received: username={}", username);
+
+        // Reload inside the transaction: the argument is detached and may be stale.
+        User managedUser = userRepository.findById(username)
+                .orElseThrow(() -> {
+                    log.warn("Logout rejected: reason=user_not_found, username={}", username);
+                    return invalidCredentials(UNAUTHORIZED);
+                });
+
+        // A different token means a newer login replaced it, so do not revoke that newer token.
+        if (!Objects.equals(user.getToken(), managedUser.getToken())) {
+            log.warn("Logout rejected: reason=token_replaced, username={}", username);
+            throw invalidCredentials(UNAUTHORIZED);
+        }
+
+        // Clear both columns: the token stops working immediately.
+        managedUser.setToken(null);
+        managedUser.setTokenExpiredAt(null);
+        userRepository.save(managedUser);
+        log.info("Logout successful: username={}", username);
+    }
+
+    /**
+     * Always returns the same generic 401 for a given message, so clients cannot tell a missing user from a wrong password.
+     *
+     * @param message the message returned to the client
+     * @return a {@code 401 UNAUTHORIZED} exception with the given message
+     */
+    private ResponseStatusException invalidCredentials(String message) {
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
     }
 }
