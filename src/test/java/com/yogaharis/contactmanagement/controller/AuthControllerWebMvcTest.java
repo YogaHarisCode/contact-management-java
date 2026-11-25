@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 /**
- * Web slice test for {@link AuthController} ({@code POST /api/auth/login}).
+ * Web slice test for {@link AuthController} ({@code POST /api/auth/login} and {@code DELETE /api/auth/logout}).
  *
  * <p>Uses {@code @WebMvcTest}, so only the web layer is loaded: routing, JSON serialization,
  * validation, HTTP status codes and the global exception handler. {@link AuthService} is mocked,
@@ -56,6 +56,7 @@ public class AuthControllerWebMvcTest {
     private AuthService authService;
 
     // UserArgumentResolver is part of the WebMvc slice and depends on UserRepository.
+    // Logout tests stub findByToken on it to simulate the token lookup done by the resolver.
     @MockitoBean
     private UserRepository userRepository;
 
@@ -288,6 +289,7 @@ public class AuthControllerWebMvcTest {
 
     // ---------------------------------------------------------- LOGOUT
 
+    /** A valid token authenticates the user, the service is called with that user and the response is 200 with {@code data} "OK". */
     @Test
     void testLogoutSuccess() {
         User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
@@ -309,6 +311,7 @@ public class AuthControllerWebMvcTest {
         verify(authService).logout(user);
     }
 
+    /** The raw JSON of a success response has a {@code data} key, no {@code errors} key, and does not echo the password or token. */
     @Test
     void testLogoutSuccessResponseOmitsErrors() {
         User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
@@ -328,6 +331,7 @@ public class AuthControllerWebMvcTest {
         assertFalse(body.contains(VALID_TOKEN));
     }
 
+    /** A missing {@code X-API-TOKEN} header gives 401 without any token lookup, and the service is not called. */
     @Test
     void testLogoutWithoutHeader() {
         assertUnauthorized(deleteLogoutWithoutHeader());
@@ -336,6 +340,7 @@ public class AuthControllerWebMvcTest {
         verify(authService, never()).logout(any(User.class));
     }
 
+    /** An empty or whitespace-only token gives 401 without any token lookup, and the service is not called. */
     @ParameterizedTest
     @ValueSource(strings = {"", "   "})
     void testLogoutBlankToken(String token) {
@@ -345,6 +350,7 @@ public class AuthControllerWebMvcTest {
         verify(authService, never()).logout(any(User.class));
     }
 
+    /** A token that matches no user gives 401, and the service is not called. */
     @Test
     void testLogoutUnknownToken() {
         when(userRepository.findByToken("Unknown-Token")).thenReturn(Optional.empty());
@@ -355,6 +361,7 @@ public class AuthControllerWebMvcTest {
         verify(authService, never()).logout(any(User.class));
     }
 
+    /** A token that is expired or has no expiry is rejected with 401 by the resolver, and the service is not called. */
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidExpirationUsers")
     void testLogoutWithInvalidExpiration(String scenario, User user) {
@@ -366,6 +373,7 @@ public class AuthControllerWebMvcTest {
         verify(authService, never()).logout(any(User.class));
     }
 
+    /** A 401 thrown by the service (for example the token was replaced after authentication) is returned as the standard error response. */
     @Test
     void testLogoutRejectedByService() {
         User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
@@ -379,6 +387,7 @@ public class AuthControllerWebMvcTest {
         verify(authService).logout(user);
     }
 
+    /** An unexpected exception gives a generic 500 that does not leak the exception message. */
     @Test
     void testLogoutUnexpectedError() {
         User user = createUserWithToken(Instant.now().plus(Duration.ofDays(1)).toEpochMilli());
@@ -400,6 +409,7 @@ public class AuthControllerWebMvcTest {
         assertFalse(String.valueOf(response.getErrors().getMessage()).contains("database down"));
     }
 
+    /** Only {@code DELETE} is mapped on {@code /api/auth/logout}, so {@code POST} gives 405 before any token lookup or service call. */
     @Test
     void testLogoutMethodNotAllowed() {
         client.post()
@@ -415,6 +425,12 @@ public class AuthControllerWebMvcTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /**
+     * Creates a user whose token is {@code VALID_TOKEN}, as the mocked repository would return it.
+     *
+     * @param tokenExpiredAt the token expiry in epoch milliseconds, or {@code null} for no expiry
+     * @return a user with the given token expiry
+     */
     private static User createUserWithToken(Long tokenExpiredAt) {
         User user = new User();
         user.setUsername("JohnDoe");
@@ -425,6 +441,11 @@ public class AuthControllerWebMvcTest {
         return user;
     }
 
+    /**
+     * Users whose token must be rejected by the resolver, as {@code (scenario, user)}.
+     *
+     * @return the arguments for {@code testLogoutWithInvalidExpiration}
+     */
     private static Stream<Arguments> invalidExpirationUsers() {
         return Stream.of(
                 Arguments.of("token is expired",
@@ -434,6 +455,12 @@ public class AuthControllerWebMvcTest {
         );
     }
 
+    /**
+     * Sends {@code DELETE /api/auth/logout} with the given token header.
+     *
+     * @param token the value of the {@code X-API-TOKEN} header
+     * @return the response spec to assert on
+     */
     private RestTestClient.ResponseSpec deleteLogout(String token) {
         return client.delete()
                 .uri("/api/auth/logout")
@@ -442,6 +469,11 @@ public class AuthControllerWebMvcTest {
                 .exchange();
     }
 
+    /**
+     * Sends {@code DELETE /api/auth/logout} without the {@code X-API-TOKEN} header.
+     *
+     * @return the response spec to assert on
+     */
     private RestTestClient.ResponseSpec deleteLogoutWithoutHeader() {
         return client.delete()
                 .uri("/api/auth/logout")
@@ -449,6 +481,12 @@ public class AuthControllerWebMvcTest {
                 .exchange();
     }
 
+    /**
+     * Asserts the standard 401 response: no {@code data}, code {@code 401 UNAUTHORIZED}, message
+     * "Unauthorized" and no {@code details}.
+     *
+     * @param spec the response to check
+     */
     private void assertUnauthorized(RestTestClient.ResponseSpec spec) {
         WebResponse<Void> response = spec
                 .expectStatus().isUnauthorized()

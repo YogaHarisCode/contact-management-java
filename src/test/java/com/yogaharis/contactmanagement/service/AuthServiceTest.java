@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- *  * Unit test for {@link AuthService#login(LoginUserRequest)} and {@link AuthService#logout(User)}.
+ * Unit test for {@link AuthService#login(LoginUserRequest)} and {@link AuthService#logout(User)}.
  *
  * <p>Runs without a Spring context: {@link UserRepository}, {@link PasswordEncoder} and
  * {@link Clock} are Mockito mocks. The clock is mocked so the token expiry can be asserted exactly.</p>
@@ -47,6 +47,7 @@ class AuthServiceTest {
 
     private static final String HASH_PASSWORD = "hash-password";
     private static final String DUMMY_HASH = "dummy-hash";
+    // Message used by login only; logout rejections use "Unauthorized".
     private static final String UNAUTHORIZED_MESSAGE = "Username or password wrong";
     // Must match the token validity defined in AuthService.
     private static final Duration TOKEN_VALIDITY = Duration.ofDays(30);
@@ -58,7 +59,7 @@ class AuthServiceTest {
         // AuthService hashes a dummy password in its constructor (timing equalization).
         lenient().when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, passwordEncoder, clock);
-        // Forget the encode() call made by the constructor, so verifyNoMoreInteractions only sees login().
+        // Forget the encode() call made by the constructor, so later verifications only see calls made by the test.
         clearInvocations(passwordEncoder);
     }
 
@@ -228,6 +229,10 @@ class AuthServiceTest {
 
     // ---------------------------------------------------------- LOGOUT
 
+    /**
+     * Valid logout: the user is reloaded, then saved with its token and expiry cleared. Name and password
+     * hash stay unchanged, and neither the password encoder nor the clock is used.
+     */
     @Test
     void testLogoutSuccess() {
         // arrange
@@ -254,6 +259,11 @@ class AuthServiceTest {
         assertEquals("John Doe", saved.getName());
     }
 
+    /**
+     * The entity that gets saved is the one reloaded with {@code findById}, not the detached argument.
+     * The two differ in password hash and name to prove which one is used: the reloaded values are kept
+     * and the detached argument is left untouched.
+     */
     @Test
     void testLogoutUsesManagedEntityNotDetachedArgument() {
         // arrange
@@ -282,6 +292,7 @@ class AuthServiceTest {
         verifyNoMoreInteractions(userRepository);
     }
 
+    /** The user no longer exists: 401 "Unauthorized" and nothing is saved. */
     @Test
     void testLogoutUserNotFound() {
         // arrange
@@ -301,6 +312,10 @@ class AuthServiceTest {
         verifyNoMoreInteractions(userRepository);
     }
 
+    /**
+     * Regression test: the argument carries an old token but the database already holds a newer one from
+     * another login. Logout is rejected with 401, the newer token is kept and nothing is saved.
+     */
     @Test
     void testLogoutRejectedWhenTokenWasReplacedByNewLogin() {
         // arrange
@@ -323,6 +338,10 @@ class AuthServiceTest {
         verifyNoMoreInteractions(userRepository);
     }
 
+    /**
+     * The reloaded user has no token any more (for example a concurrent logout already cleared it).
+     * Logout is rejected with 401 and nothing is saved.
+     */
     @Test
     void testLogoutRejectedWhenTokenAlreadyCleared() {
         // arrange
@@ -345,6 +364,13 @@ class AuthServiceTest {
 
     // ---------------------------------------------------------- HELPER
 
+    /**
+     * Creates an existing user like {@link #createUser()}, but with the given token and an expiry
+     * one day after {@code LOGIN_TIME}.
+     *
+     * @param token the token to set on the user
+     * @return a user that has a token and a token expiry
+     */
     private User createUserWithToken(String token) {
         User user = createUser();
         user.setToken(token);

@@ -18,10 +18,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Handles user authentication: checks credentials and issues an API token.
+ * Handles user authentication: checks credentials, issues an API token on login and revokes it on logout.
  *
  * <p>A token is a random UUID valid for 30 days. It is stored on the user's row, so a user
- * has at most one active token at a time.</p>
+ * has at most one active token at a time. Logging out clears the token and its expiry.</p>
  *
  * @author Yoga Harisistianugroho
  */
@@ -109,22 +109,38 @@ public class AuthService {
                 .build();
     }
 
+    /**
+     * Revokes the API token of a user, so the token can no longer be used.
+     *
+     * <p>The {@code user} argument comes from {@code UserArgumentResolver} and is detached, so it may be
+     * stale. The user is therefore reloaded inside the transaction, and the reloaded entity is the one that
+     * is changed and saved. Its token and token expiry are cleared only if the token still equals the one
+     * that authenticated this request. If a newer login replaced it in the meantime, the request is rejected
+     * so the newer token is not revoked by mistake.</p>
+     *
+     * @param user the authenticated user resolved from the {@code X-API-TOKEN} header
+     * @throws ResponseStatusException with status {@code 401 UNAUTHORIZED} and the message "Unauthorized"
+     *                                 when the user no longer exists or the token was already replaced
+     */
     @Transactional
     public void logout(User user) {
         String username = user.getUsername();
         log.debug("Logout attempt received: username={}", username);
 
+        // Reload inside the transaction: the argument is detached and may be stale.
         User managedUser = userRepository.findById(username)
                 .orElseThrow(() -> {
                     log.warn("Logout rejected: reason=user_not_found, username={}", username);
                     return invalidCredentials(UNAUTHORIZED);
                 });
 
+        // A different token means a newer login replaced it, so do not revoke that newer token.
         if (!Objects.equals(user.getToken(), managedUser.getToken())) {
             log.warn("Logout rejected: reason=token_replaced, username={}", username);
             throw invalidCredentials(UNAUTHORIZED);
         }
 
+        // Clear both columns: the token stops working immediately.
         managedUser.setToken(null);
         managedUser.setTokenExpiredAt(null);
         userRepository.save(managedUser);

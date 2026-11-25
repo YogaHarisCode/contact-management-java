@@ -2,7 +2,7 @@
 
 A REST API backend for managing users, contacts, and addresses, built with Java and Spring Boot.
 
-This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration, login, get current user, and update current user are implemented, and the remaining modules are planned (see [API Documentation](#api-documentation)).
+This is a portfolio project for learning and demonstrating Java backend development. It is under active development: user registration, login, get current user, update current user, and logout are implemented, and the Contact and Address modules are planned (see [API Documentation](#api-documentation)).
 
 ## Tech Stack
 
@@ -100,7 +100,7 @@ The project uses three kinds of tests for every feature:
 | Controller slice test | `UserControllerWebMvcTest`, `AuthControllerWebMvcTest` | Controller layer, validation, and error responses (`@WebMvcTest`, service mocked) |
 | Integration test | `UserControllerTest`, `AuthControllerTest` | Full flow from controller to the `contact_management_test` database |
 
-`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header. The same component is also exercised over HTTP by the get current user and update user tests in `UserControllerWebMvcTest` and `UserControllerTest`.
+`UserArgumentResolverTest` is a unit test for the component that validates the `X-API-TOKEN` header. The same component is also exercised over HTTP by the get current user and update user tests in `UserControllerWebMvcTest` and `UserControllerTest`, and by the logout tests in `AuthControllerWebMvcTest` and `AuthControllerTest`.
 
 Integration tests use the `test` profile. Make sure the `contact_management_test` database exists and the credentials used by the test profile are valid.
 
@@ -440,9 +440,52 @@ curl -X PATCH http://localhost:8080/api/users/current \
   -d '{"name":"John Doe Updated","password":"newsecretpassword"}'
 ```
 
+### Logout User
+
+Revokes the token of the user that owns it. The request has no body.
+
+- **Method:** `DELETE`
+- **URL:** `/api/auth/logout`
+- **Headers:** `X-API-TOKEN: <token>`, `Accept: application/json`
+
+- The token and its expiry are cleared, so the token stops working immediately.
+- Only the user who owns the token is affected.
+- The user can log in again to get a new token.
+- Calling logout again with the same token returns `401`, because the token is no longer known.
+- A token that was already replaced by a newer login is rejected with `401` and never revokes the newer token.
+
+**Responses**
+
+`200 OK`
+
+```json
+{
+  "data": "OK"
+}
+```
+
+`401 Unauthorized` (header missing or blank, token unknown, expired or without expiry, the user no longer exists, or the token was replaced by a newer login)
+
+```json
+{
+  "errors": {
+    "code": "401 UNAUTHORIZED",
+    "message": "Unauthorized"
+  }
+}
+```
+
+**Example**
+
+```bash
+curl -X DELETE http://localhost:8080/api/auth/logout \
+  -H "X-API-TOKEN: <token>" \
+  -H "Accept: application/json"
+```
+
 ### Authentication token
 
-Login issues a token that clients send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented in `UserArgumentResolver`: any controller method that declares a `User` parameter is authenticated automatically. Currently `GET /api/users/current` and `PATCH /api/users/current` use it. Full Spring Security integration is planned.
+Login issues a token that clients send in the `X-API-TOKEN` header. A request is accepted only if the token belongs to a user and has not expired; otherwise it is rejected with `401 Unauthorized`. This check is implemented in `UserArgumentResolver`: any controller method that declares a `User` parameter is authenticated automatically. Currently `GET /api/users/current`, `PATCH /api/users/current`, and `DELETE /api/auth/logout` use it. Logout clears the token, so it is rejected from then on and the user must log in again to get a new one. Full Spring Security integration is planned.
 
 ### Planned endpoints
 
@@ -450,7 +493,6 @@ These endpoints are not implemented yet.
 
 | Module | Method | URL |
 |---|---|---|
-| Auth | `DELETE` | `/api/auth/logout` |
 | Contact | `POST` | `/api/contacts` |
 | Contact | `GET` | `/api/contacts` (search with pagination) |
 | Contact | `GET` | `/api/contacts/{contactId}` |

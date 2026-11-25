@@ -42,6 +42,18 @@ public class AuthController {
         return WebResponse.<TokenResponse>builder().data(response).build();
     }
 
+    /**
+     * Logs the current user out: {@code DELETE /api/auth/logout}. Produces JSON and takes no request body.
+     *
+     * <p>The user is authenticated from the {@code X-API-TOKEN} header by {@code UserArgumentResolver},
+     * because the method declares a {@link User} parameter. On success the user's token is revoked and
+     * stops working immediately. The standard error response is returned with {@code 401} when the header
+     * is missing or blank, the token is unknown, expired or has no expiry, the user no longer exists, or
+     * the token was replaced by a newer login.</p>
+     *
+     * @param user the authenticated user, resolved from the {@code X-API-TOKEN} header
+     * @return the standard response envelope whose {@code data} is the text {@code "OK"}
+     */
     @DeleteMapping(
             path = "/logout",
             produces = MediaType.APPLICATION_JSON_VALUE

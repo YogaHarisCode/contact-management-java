@@ -327,13 +327,20 @@ Returned when `Content-Type` is not JSON.
 
 Invalidate the current authentication token.
 
-**Status**: Not implemented yet.
-
 - **URL**: `/api/auth/logout`
 - **Method**: `DELETE`
 - **Headers**:
   - `X-API-TOKEN: {token}`
   - `Accept: application/json`
+
+The user is identified by the token in `X-API-TOKEN`. No request body or query parameter is used.
+
+Behavior:
+- The token and its expiry stored for the user are cleared. The token stops working immediately.
+- Only the user who owns the token is affected.
+- The user can log in again to get a new token.
+- Calling logout again with the same token returns `401`, because the token is no longer known.
+- A token that was already replaced by a newer login is rejected with `401`. It never revokes the newer token.
 
 ### Response
 
@@ -345,6 +352,8 @@ Invalidate the current authentication token.
 ```
 
 #### Unauthorized (401 Unauthorized)
+
+Returned when the `X-API-TOKEN` header is missing or blank, the token is unknown, expired or has no expiry, the user no longer exists, or the token was replaced by a newer login:
 ```json
 {
   "errors": {
